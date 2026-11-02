@@ -1,0 +1,109 @@
+# Render Blueprint for the JFI Studio WhatsApp Automation web service.
+#
+# Secrets are declared with `sync: false`, which makes Render prompt for them
+# in the dashboard instead of storing them in this file. No secret value is
+# ever written here.
+#
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: jfi-studio-whatsapp-automation
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+
+    # A persistent disk keeps packs and the daily-run lock across deploys, so
+    # a restart cannot send the pack twice. Disks are not available on the
+    # free plan; without one the app still works, it just loses its local
+    # state on each deploy. Uncomment both blocks together.
+    # disk:
+    #   name: jfi-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: LOG_LEVEL
+        value: info
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: ENABLE_INTERNAL_CRON
+        value: "false"
+      - key: DAILY_CRON
+        value: "30 8 * * *"
+      - key: META_GRAPH_API_VERSION
+        value: v26.0
+      - key: WHATSAPP_DELIVERY_MODE
+        value: link
+      - key: WHATSAPP_TEMPLATE_NAME
+        value: jfi_daily_content_pack
+      - key: WHATSAPP_TEMPLATE_LANGUAGE
+        value: en
+      - key: WHATSAPP_TEMPLATE_URL_BUTTON_INDEX
+        value: "0"
+      - key: WHATSAPP_TEMPLATE_BODY_FIELDS
+        value: dateLabel
+      - key: CONTENT_SOURCE
+        value: auto
+      - key: OPENAI_MODEL
+        value: gpt-6-luna
+      # If you attach the disk above, set this to /var/data.
+      - key: DATA_DIR
+        value: ./data
+
+      # --- Prompted secrets (set in the Render dashboard, never here) ---
+      - key: META_ACCESS_TOKEN
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        sync: false
+      - key: WHATSAPP_RECIPIENT_NUMBER
+        sync: false
+      - key: WHATSAPP_SENDER_NUMBER
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: ADMIN_TRIGGER_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+# ---------------------------------------------------------------------------
+# Optional but recommended: a Render Cron Job that triggers the daily run.
+# Render cron schedules are in UTC, so 08:30 IST = 03:00 UTC.
+#
+# Create it manually (Dashboard > New > Cron Job) on the same repository with:
+#   Schedule:        0 3 * * *
+#   Build command:   npm ci --omit=dev
+#   Start command:   node scripts/run-daily.js
+# and set PUBLIC_BASE_URL + ADMIN_TRIGGER_TOKEN on it as well. The script
+# calls POST /admin/run-daily, retries on transient failures, and exits
+# non-zero so Render marks the run as failed.
+#
+#   - type: cron
+#     name: jfi-daily-content-pack
+#     runtime: node
+#     region: singapore
+#     schedule: "0 3 * * *"
+#     buildCommand: npm ci --omit=dev
+#     startCommand: node scripts/run-daily.js
+#     envVars:
+#       - key: PUBLIC_BASE_URL
+#         sync: false
+#       - key: ADMIN_TRIGGER_TOKEN
+#         sync: false
+# ---------------------------------------------------------------------------
