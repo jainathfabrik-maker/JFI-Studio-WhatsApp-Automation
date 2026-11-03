@@ -1,0 +1,164 @@
+name: Verify deployment
+
+# Runs from GitHub's runners, which — unlike a restricted assistant sandbox —
+# can reach *.onrender.com. Use this after the first Render deploy, and again
+# after any change, to get a verdict instead of a guess.
+#
+# Actions tab → Verify deployment → Run workflow → paste your service URL.
+# Needs no secrets: /health, /status, /webhook and /p/ are all safe to probe.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Deployed service URL (e.g. https://jfi-studio-whatsapp-automation.onrender.com)'
+        required: true
+        type: string
+      verify_token:
+        description: 'Optional: META_VERIFY_TOKEN, to test the full webhook handshake'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Live checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Health endpoint
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          echo "Target: $base"
+
+          # A free-tier instance may be asleep; give it time to cold start.
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 40 "$base/health" || true)
+            echo "attempt $i/20: HTTP ${code:-none}"
+            if [ "$code" = "200" ]; then break; fi
+            if [ "$i" -lt 20 ]; then sleep 15; fi
+          done
+
+          if [ "${code:-000}" != "200" ]; then
+            echo "::error::/health did not return 200. The service is down, still deploying, or the URL is wrong."
+            exit 1
+          fi
+
+          echo "--- /health ---"
+          cat /tmp/health.json
+          node -e '
+            const body = JSON.parse(require("fs").readFileSync("/tmp/health.json", "utf8"));
+            if (body.ok !== true) { console.error("::error::/health did not report ok:true"); process.exit(1); }
+            console.log("ok:true, service:", body.service, "version:", body.version);
+          '
+
+      - name: Status endpoint and secret hygiene
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          code=$(curl -s -o /tmp/status.json -w '%{http_code}' --max-time 40 "$base/status")
+          echo "--- /status (HTTP $code) ---"
+          cat /tmp/status.json
+          if [ "$code" != "200" ]; then echo "::error::/status did not return 200"; exit 1; fi
+          node -e '
+            const fs = require("fs");
+            const raw = fs.readFileSync("/tmp/status.json", "utf8");
+            const body = JSON.parse(raw);
+            if (body.ok !== true) { console.error("::error::/status did not report ok:true"); process.exit(1); }
+            if (body.deliveryBlocked === true) {
+              console.error("::error::Delivery is blocked: " + body.deliveryBlockedReason);
+              process.exit(1);
+            }
+            for (const pattern of [/EAA[A-Za-z0-9_-]{20,}/, /sk-[A-Za-z0-9_-]{20,}/, /\b\d{10,15}\b/]) {
+              if (pattern.test(raw)) {
+                console.error("::error::/status appears to expose a secret or a raw phone number: " + pattern);
+                process.exit(1);
+              }
+            }
+            console.log("config:", JSON.stringify(body.config));
+            console.log("lastRun:", JSON.stringify(body.lastRun));
+          '
+
+      - name: Webhook rejects an unauthenticated POST
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            -X POST "$base/webhook" \
+            -H 'Content-Type: application/json' \
+            -d '{"object":"whatsapp_business_account","entry":[]}')
+          echo "unsigned POST /webhook -> HTTP $code"
+          if [ "$code" != "401" ]; then
+            echo "::error::An unsigned webhook POST should return 401, got $code. Signature verification may be broken."
+            exit 1
+          fi
+
+      - name: Webhook rejects a wrong verify token
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+            "$base/webhook?hub.mode=subscribe&hub.verify_token=definitely-wrong&hub.challenge=1")
+          echo "wrong-token handshake -> HTTP $code"
+          if [ "$code" != "403" ]; then
+            echo "::error::A wrong verify token should return 403, got $code."
+            exit 1
+          fi
+
+      - name: Webhook handshake with the real token
+        if: inputs.verify_token != ''
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          VERIFY_TOKEN: ${{ inputs.verify_token }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          body=$(curl -s --max-time 30 --get "$base/webhook" \
+            --data-urlencode 'hub.mode=subscribe' \
+            --data-urlencode "hub.verify_token=$VERIFY_TOKEN" \
+            --data-urlencode 'hub.challenge=12345')
+          echo "handshake returned: $body"
+          if [ "$body" != "12345" ]; then
+            echo "::error::The handshake did not echo the challenge. Meta's Verify and save will fail with the same token."
+            exit 1
+          fi
+          echo "Handshake works. Use this exact verify token in the Meta dashboard."
+
+      - name: Pack page 404s for an unknown id
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$base/p/notarealpackid123")
+          echo "unknown pack id -> HTTP $code"
+          if [ "$code" != "404" ]; then
+            echo "::error::An unknown pack id should return 404, got $code."
+            exit 1
+          fi
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### Deployment verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Check | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`/health\` | 200, ok:true |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`/status\` | 200, no secrets or raw numbers exposed |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Unsigned webhook POST | 401, signature check active |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Wrong verify token | 403 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| \`/p/<unknown>\` | 404 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Still to confirm by hand: Meta webhook subscription, template approval, a real message arriving." >> "$GITHUB_STEP_SUMMARY"
