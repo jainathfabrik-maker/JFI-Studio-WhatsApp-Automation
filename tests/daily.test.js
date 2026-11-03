@@ -101,6 +101,34 @@ test('link mode without PUBLIC_BASE_URL refuses to send, with a clear reason', a
   assert.equal(http.calls.length, 0, 'nothing may be sent without a pack link');
 });
 
+test('the run builds the pack link from the triggering request when no URL is configured', async () => {
+  const http = okHttp();
+  const { service } = buildService({ env: { PUBLIC_BASE_URL: '' }, http, now: () => FIXED_NOW });
+
+  const result = await service.runner.runDaily({
+    trigger: 'test',
+    publicBaseUrl: 'https://jfi-live.onrender.com',
+  });
+
+  assert.equal(result.skipped, false);
+  assert.equal(result.accepted, true);
+  assert.equal(http.calls.length, 1, 'the send must succeed without any configured URL');
+});
+
+test('a malformed request origin is refused instead of producing a broken link', async () => {
+  const http = okHttp();
+  const { service } = buildService({ env: { PUBLIC_BASE_URL: '' }, http, now: () => FIXED_NOW });
+
+  await assert.rejects(
+    () => service.runner.runDaily({ trigger: 'test', publicBaseUrl: 'javascript:alert(1)' }),
+    (error) => {
+      assert.equal(error.code, 'public-base-url-invalid');
+      return true;
+    },
+  );
+  assert.equal(http.calls.length, 0);
+});
+
 test('text mode refuses to send outside the 24-hour window', async () => {
   const http = okHttp();
   const { service } = buildService({

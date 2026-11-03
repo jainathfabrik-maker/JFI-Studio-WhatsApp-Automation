@@ -69,13 +69,15 @@ for (const block of blocks) {
 }
 
 // --- 5. Every secret the app needs must be declared ---------------------
+// PUBLIC_BASE_URL is deliberately absent: the app resolves its own URL from
+// RENDER_EXTERNAL_URL or from the incoming request, so requiring it would
+// reintroduce the copy-paste step this validator exists to prevent.
 const requiredSecrets = [
   'META_ACCESS_TOKEN',
   'META_APP_SECRET',
   'META_VERIFY_TOKEN',
   'WHATSAPP_PHONE_NUMBER_ID',
   'WHATSAPP_RECIPIENT_NUMBER',
-  'PUBLIC_BASE_URL',
   'ADMIN_TRIGGER_TOKEN',
 ];
 for (const key of requiredSecrets) {

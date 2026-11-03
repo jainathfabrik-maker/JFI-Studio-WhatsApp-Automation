@@ -186,6 +186,31 @@ test('GET /admin/diagnostics reports the business number it resolves', async () 
   );
 });
 
+test('GET /setup derives the callback and template URLs from the request host', async () => {
+  await withServer(
+    async ({ get, baseUrl }) => {
+      const page = await get('/setup');
+      assert.equal(page.status, 200);
+      assert.match(page.headers['content-type'], /text\/html/);
+      assert.ok(page.text.includes(`${baseUrl}/webhook`), 'callback URL should use the request host');
+      assert.ok(page.text.includes(`${baseUrl}/p/{{1}}`), 'template button URL should use the request host');
+      assert.ok(page.text.includes('messages'), 'should tell the operator which webhook field to subscribe');
+      assert.ok(!page.text.includes(APP_SECRET), 'the app secret must never be rendered');
+      assert.ok(!page.text.includes(ADMIN_TOKEN), 'the admin token must never be rendered');
+      assert.ok(!page.text.includes(VERIFY_TOKEN), 'the verify token must not be rendered on a page');
+    },
+    { env: { PUBLIC_BASE_URL: '' } },
+  );
+});
+
+test('GET /status reports which source the public URL came from', async () => {
+  await withServer(async ({ get }) => {
+    const body = await get('/status');
+    assert.equal(body.json.publicBaseUrlSource, 'PUBLIC_BASE_URL');
+    assert.equal(body.json.publicBaseUrl, 'https://jfi.example.com');
+  });
+});
+
 test('the webhook rejects a signature computed over different bytes', async () => {
   await withServer(async ({ post }) => {
     const signed = JSON.stringify(inboundPayload({ messageId: 'wamid.A' }));

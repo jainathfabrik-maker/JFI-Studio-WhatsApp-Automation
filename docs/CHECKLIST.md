@@ -114,7 +114,8 @@ in some cases your judgement.
 
 - [ ] Connect the repository and apply `render.yaml` (now on the free plan).
 - [ ] Enter every `sync: false` variable in the dashboard.
-- [ ] Copy the service URL into `PUBLIC_BASE_URL` and redeploy.
+- [ ] Leave `PUBLIC_BASE_URL` blank — the app derives its own URL. Open
+      `/setup` on the live service for every value Meta and GitHub need.
 - [ ] Set `ADMIN_TRIGGER_TOKEN` (32+ characters).
 
 ### GitHub (the free scheduler)

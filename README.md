@@ -73,6 +73,7 @@ src/
   webhook.js               Meta handshake, signature verification, event processing
   daily.js                 the daily job: generate → save → deliver → record
   packPage.js              the private mobile pack page
+  setupPage.js             /setup: every Meta and GitHub value, auto-derived
   rateLimit.js             in-memory fixed-window abuse protection
   app.js                   Express routes and middleware
   service.js               wiring
@@ -132,6 +133,10 @@ Render Dashboard → **New → Blueprint** → connect
 Build command: `npm ci --omit=dev` — Start command: `npm start` — Health check
 path: `/health`.
 
+**There is no URL to copy.** Render injects `RENDER_EXTERNAL_URL` for every web
+service, and the app also derives its own origin from each request, so
+`PUBLIC_BASE_URL` stays empty unless you use a custom domain.
+
 ### 3. Fill in the environment variables
 
 Render will prompt for every variable marked `sync: false`. Set them in
@@ -153,9 +158,11 @@ token is a user token that will expire.
 
 ### 4. Confirm the service is up
 
-Open `https://<your-service>.onrender.com/health` — expect
-`{"ok":true,...}`. Then open `/status` for the resolved configuration and the
-last run.
+Open `https://<your-service>.onrender.com/health` — expect `{"ok":true,...}`.
+
+Then open **`/setup`**. It prints every value Meta and GitHub need — callback
+URL, template body, button URL, sample values — computed from the address you
+opened it on, with copy buttons. It contains no secrets.
 
 ### 5. Configure Meta
 
@@ -204,7 +211,7 @@ start, or the workflow firing twice all result in exactly one message.
 | `META_APP_ID` | no | App settings → Basic. Only `scripts/setup-meta.js` needs it, to register the webhook subscription. Not the Phone Number ID, not the WABA ID. |
 | `WHATSAPP_PHONE_NUMBER_ID` | **yes** | Meta App Dashboard → WhatsApp → API Setup. Digits only. Not the phone number, not the WABA ID, not the App ID. |
 | `WHATSAPP_RECIPIENT_NUMBER` | **yes** | A number you control, international format, digits only, e.g. `919876543210`. Must differ from the business number. |
-| `PUBLIC_BASE_URL` | **yes** in `link` mode | Your service URL, e.g. `https://jfi-studio-whatsapp-automation.onrender.com`. No trailing slash. |
+| `PUBLIC_BASE_URL` | **no — leave it blank** | Only needed for a custom domain. The app resolves its own URL from Render's `RENDER_EXTERNAL_URL`, and failing that from the origin of the request that triggers the run. |
 | `ADMIN_TRIGGER_TOKEN` | yes if you use a Cron Job | A long random string you invent (32+ characters). |
 | `WHATSAPP_TEMPLATE_NAME` | yes | The approved template name, default `jfi_daily_content_pack`. |
 | `WHATSAPP_TEMPLATE_LANGUAGE` | yes | The template's language code, e.g. `en`. Must match the approved variant exactly. |
@@ -251,6 +258,7 @@ variable **names** (never values) with where to set them, then exits 1.
 | POST | `/admin/resend-latest` | `Bearer ADMIN_TRIGGER_TOKEN` | Re-send the most recent pack. |
 | GET | `/admin/diagnostics` | `Bearer ADMIN_TRIGGER_TOKEN` | Asks Meta for the business number and reports whether it matches the recipient. |
 | GET | `/p/:id` | unguessable id | The private pack page opened by the WhatsApp button. |
+| GET | `/setup` | none | Every value Meta and GitHub need, derived from the request host. No secrets. |
 
 ---
 

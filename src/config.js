@@ -277,6 +277,14 @@ export function loadConfig(env = process.env) {
     );
   }
 
+  // Render injects RENDER_EXTERNAL_URL (e.g. https://myapp.onrender.com) for
+  // every web service at runtime, so the app knows its own address without
+  // anyone copying it into a variable. PUBLIC_BASE_URL stays as an explicit
+  // override for a custom domain.
+  const renderExternalUrl = String(env.RENDER_EXTERNAL_URL ?? '')
+    .trim()
+    .replace(/\/+$/, '');
+
   let publicBaseUrl = (values.PUBLIC_BASE_URL ?? '').replace(/\/+$/, '');
   if (publicBaseUrl) {
     try {
@@ -290,16 +298,22 @@ export function loadConfig(env = process.env) {
       publicBaseUrl = '';
     }
   }
-  // Deliberately a warning, not an error. On a first deploy you cannot know
-  // your own URL until Render has created the service, so refusing to boot
-  // would crash-loop the service before you could read the URL. The service
-  // starts, /health answers, /status says delivery is blocked, and every send
-  // refuses with a clear reason until PUBLIC_BASE_URL is set.
-  if (deliveryMode === 'link' && !publicBaseUrl) {
+  const resolvedBaseUrl = publicBaseUrl || (/^https?:\/\/[^/]+$/.test(renderExternalUrl) ? renderExternalUrl : '');
+  const baseUrlSource = publicBaseUrl
+    ? 'PUBLIC_BASE_URL'
+    : resolvedBaseUrl
+      ? 'RENDER_EXTERNAL_URL'
+      : 'unresolved';
+
+  // Deliberately a warning, not an error. On a first deploy nobody can know the
+  // URL before Render creates the service, so refusing to boot would crash-loop
+  // it before the URL could even be read. The service starts, /health answers,
+  // /status explains the situation, and a send either uses the detected URL or
+  // refuses with a clear reason.
+  if (deliveryMode === 'link' && !resolvedBaseUrl) {
     warnings.push(
-      `PUBLIC_BASE_URL is not set, so link delivery is blocked: the template button has no URL to point at. ` +
-        `Copy the service URL from the top of your Render service page into ${LOCATION.PUBLIC_BASE_URL} and redeploy. ` +
-        `The service runs normally until then; /status will report deliveryBlocked.`,
+      'No public URL could be determined, so link delivery will fall back to the URL of the incoming request. ' +
+        'On Render this resolves automatically via RENDER_EXTERNAL_URL; set PUBLIC_BASE_URL only if you use a custom domain.',
     );
   }
 
@@ -341,7 +355,9 @@ export function loadConfig(env = process.env) {
     templateUrlButtonIndex,
     templateBodyFields: templateBodyFields.length ? templateBodyFields : ['dateLabel'],
     publicBaseUrl,
-    publicBaseUrlConfigured: Boolean(publicBaseUrl),
+    resolvedBaseUrl,
+    baseUrlSource,
+    publicBaseUrlConfigured: Boolean(resolvedBaseUrl),
     contentSource,
     effectiveContentSource,
     openaiKey,
@@ -363,6 +379,7 @@ export function describeConfig(config) {
     graphApiVersion: config.graphApiVersion,
     appId: config.appId || undefined,
     deliveryMode: config.deliveryMode,
+    baseUrlSource: config.baseUrlSource,
     contentSource: config.effectiveContentSource,
     templateName: config.templateName,
     templateLanguage: config.templateLanguage,

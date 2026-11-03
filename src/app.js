@@ -1,6 +1,7 @@
 import express from 'express';
 import { verifySignature, verifySubscription, processWebhookBody } from './webhook.js';
 import { renderPackPage, renderPackMissing } from './packPage.js';
+import { renderSetupPage } from './setupPage.js';
 import { createRateLimiter } from './rateLimit.js';
 import { timingSafeEqualString } from './util.js';
 
@@ -37,6 +38,18 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
   // burst and retries on a non-200; tight on the authenticated admin surface.
   const webhookLimiter = createRateLimiter({ windowMs: 60_000, max: 1200, name: 'webhook' });
   const adminLimiter = createRateLimiter({ windowMs: 60_000, max: 60, name: 'admin' });
+
+  /**
+   * The public origin of the request itself. With `trust proxy` on, Express
+   * already reads x-forwarded-proto/host, so this is the address the caller
+   * actually used — which is exactly the address WhatsApp must link to.
+   */
+  function requestBaseUrl(req) {
+    const host = req.get('host');
+    if (!host) return '';
+    const proto = (req.protocol || 'https').split(',')[0].trim();
+    return `${proto}://${host}`.replace(/\/+$/, '');
+  }
 
   function requireAdmin(req, res, next) {
     if (!config.adminToken) {
@@ -83,13 +96,10 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
         templateLanguage: config.templateLanguage,
         templateBodyFields: config.templateBodyFields,
       },
-      deliveryBlocked: safety.blocked || (config.deliveryMode === 'link' && !config.publicBaseUrlConfigured),
-      deliveryBlockedReason: safety.blocked
-        ? safety.reason
-        : config.deliveryMode === 'link' && !config.publicBaseUrlConfigured
-          ? 'PUBLIC_BASE_URL is not set, so the pack link cannot be built. Copy your service URL from the Render service page into PUBLIC_BASE_URL and redeploy.'
-          : null,
-      publicBaseUrlConfigured: config.publicBaseUrlConfigured,
+      publicBaseUrl: config.resolvedBaseUrl || null,
+      publicBaseUrlSource: config.baseUrlSource,
+      deliveryBlocked: safety.blocked,
+      deliveryBlockedReason: safety.blocked ? safety.reason : null,
       lastRun: lastRun
         ? { date: lastRun.date, status: lastRun.status, at: lastRun.at, packId: lastRun.packId ?? null, error: lastRun.error ?? null }
         : null,
@@ -145,7 +155,9 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
     requireAdmin,
     wrap(async (req, res) => {
       const force = req.body?.force === true;
-      const result = await runner.runDaily({ trigger: 'admin', force });
+      // Use the origin the caller actually reached, so the pack link is correct
+      // even before any URL is configured.
+      const result = await runner.runDaily({ trigger: 'admin', force, publicBaseUrl: requestBaseUrl(req) });
       res.json(result);
     }),
   );
@@ -154,8 +166,8 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
     '/admin/resend-latest',
     adminLimiter,
     requireAdmin,
-    wrap(async (_req, res) => {
-      const result = await runner.resendLatest();
+    wrap(async (req, res) => {
+      const result = await runner.resendLatest({ publicBaseUrl: requestBaseUrl(req) });
       res.json(result);
     }),
   );
@@ -184,6 +196,26 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
       });
     }),
   );
+
+  // --- Setup sheet ----------------------------------------------------------
+  // Renders the exact values Meta and GitHub need, computed from the URL this
+  // page was opened on. Contains no secrets: the verify token is referenced by
+  // name only. noindex, and nothing links to it.
+  app.get('/setup', (req, res) => {
+    const baseUrl = config.resolvedBaseUrl || requestBaseUrl(req);
+    const baseUrlSource = config.resolvedBaseUrl ? config.baseUrlSource : 'request';
+    res.set('Cache-Control', 'no-store');
+    res.set('X-Robots-Tag', 'noindex, nofollow');
+    return res.type('html').send(
+      renderSetupPage({
+        baseUrl,
+        baseUrlSource,
+        config,
+        hasVerifyToken: Boolean(config.verifyToken),
+        deliveryBlockedReason: safety.blocked ? safety.reason : null,
+      }),
+    );
+  });
 
   // --- Pack page (the WhatsApp template button target) ----------------------
   app.get('/p/:id', (req, res) => {

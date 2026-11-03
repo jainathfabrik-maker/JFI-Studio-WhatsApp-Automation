@@ -41,7 +41,7 @@ export function createDailyRunner({
    * "Accepted" means Meta returned a message id. It does NOT mean delivered —
    * delivery is confirmed only by the `statuses` webhook.
    */
-  async function deliver(pack) {
+  async function deliver(pack, baseUrlOverride) {
     if (safety.blocked) {
       throw new DeliveryError(safety.reason ?? 'Delivery is blocked by the self-send guard.', {
         code: 'self-send-blocked',
@@ -53,13 +53,24 @@ export function createDailyRunner({
     const to = config.recipientNumber;
 
     if (config.deliveryMode === 'link') {
-      if (!config.publicBaseUrl) {
+      // Resolution order: the URL of the request that triggered this run (so a
+      // manual or scheduled trigger always uses the address it actually
+      // arrived on), then RENDER_EXTERNAL_URL / PUBLIC_BASE_URL from the
+      // environment. Nothing has to be copied by hand.
+      const baseUrl = (baseUrlOverride || config.resolvedBaseUrl || '').replace(/\/+$/, '');
+      if (!baseUrl) {
         throw new DeliveryError(
-          'PUBLIC_BASE_URL is not set, so the pack link cannot be built. Copy your service URL from the top of the Render service page into PUBLIC_BASE_URL and redeploy.',
+          'No public URL is available, so the pack link cannot be built. This happens only when the run is started from inside the process and neither RENDER_EXTERNAL_URL nor PUBLIC_BASE_URL is set. Trigger the run over HTTP instead, or set PUBLIC_BASE_URL.',
           { code: 'public-base-url-missing', status: 409 },
         );
       }
-      const packUrl = `${config.publicBaseUrl}/p/${pack.id}`;
+      if (!/^https?:\/\/[^/]+$/.test(baseUrl)) {
+        throw new DeliveryError(`Refusing to build a pack link from a malformed base URL: ${baseUrl}`, {
+          code: 'public-base-url-invalid',
+          status: 409,
+        });
+      }
+      const packUrl = `${baseUrl}/p/${pack.id}`;
       const bodyParams = buildTemplateParams(pack, config.templateBodyFields);
       const result = await whatsapp.sendTemplate({ to, bodyParams, urlButtonSuffix: pack.id });
       logger.info('Template accepted by Meta', { messageId: result.messageId, packUrl });
@@ -89,7 +100,7 @@ export function createDailyRunner({
    * Idempotent per calendar day in the configured timezone — a restart, a
    * second instance, or a duplicate scheduler hit cannot send twice.
    */
-  async function runDaily({ trigger = 'manual', force = false, nowMs = now() } = {}) {
+  async function runDaily({ trigger = 'manual', force = false, nowMs = now(), publicBaseUrl } = {}) {
     const dateKey = dateKeyInTz(config.timezone, nowMs);
     const lock = store.tryAcquireRunLock(dateKey);
 
@@ -113,7 +124,7 @@ export function createDailyRunner({
 
       let delivery;
       try {
-        delivery = await deliver(stored);
+        delivery = await deliver(stored, publicBaseUrl);
       } catch (error) {
         await store.updatePack(stored.id, {
           status: 'failed',
@@ -177,7 +188,7 @@ export function createDailyRunner({
   }
 
   /** Re-send the most recent pack. Used by the safe test path and by retries. */
-  async function resendLatest({ force = false } = {}) {
+  async function resendLatest({ force = false, publicBaseUrl } = {}) {
     const pack = store.latestPack();
     if (!pack) {
       throw new DeliveryError('No pack has been generated yet. Run the daily job once before resending.', {
@@ -185,7 +196,7 @@ export function createDailyRunner({
         status: 409,
       });
     }
-    const delivery = await deliver(pack);
+    const delivery = await deliver(pack, publicBaseUrl);
     await store.updatePack(pack.id, {
       status: 'sent',
       messageIds: delivery.messageIds,

@@ -62,6 +62,30 @@ test('link mode without PUBLIC_BASE_URL starts but warns, so a first deploy can 
   assert.equal(config.publicBaseUrlConfigured, false);
 });
 
+test('RENDER_EXTERNAL_URL is used when PUBLIC_BASE_URL is absent', () => {
+  const { config, errors } = loadConfig(
+    baseEnv({ PUBLIC_BASE_URL: '', RENDER_EXTERNAL_URL: 'https://jfi-studio.onrender.com' }),
+  );
+  assert.deepEqual(errors, []);
+  assert.equal(config.resolvedBaseUrl, 'https://jfi-studio.onrender.com');
+  assert.equal(config.baseUrlSource, 'RENDER_EXTERNAL_URL');
+});
+
+test('PUBLIC_BASE_URL overrides RENDER_EXTERNAL_URL for a custom domain', () => {
+  const { config } = loadConfig(
+    baseEnv({ PUBLIC_BASE_URL: 'https://interiors.jfistudio.in', RENDER_EXTERNAL_URL: 'https://x.onrender.com' }),
+  );
+  assert.equal(config.resolvedBaseUrl, 'https://interiors.jfistudio.in');
+  assert.equal(config.baseUrlSource, 'PUBLIC_BASE_URL');
+});
+
+test('a junk RENDER_EXTERNAL_URL is ignored rather than used blindly', () => {
+  const { config, errors } = loadConfig(baseEnv({ PUBLIC_BASE_URL: '', RENDER_EXTERNAL_URL: 'not-a-url' }));
+  assert.deepEqual(errors, []);
+  assert.equal(config.resolvedBaseUrl, '');
+  assert.equal(config.baseUrlSource, 'unresolved');
+});
+
 test('a malformed PUBLIC_BASE_URL is still a hard error', () => {
   const { errors } = loadConfig(baseEnv({ PUBLIC_BASE_URL: 'not-a-url' }));
   assert.match(errors.join('\n'), /PUBLIC_BASE_URL/);

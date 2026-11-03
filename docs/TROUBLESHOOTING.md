@@ -25,7 +25,7 @@ worse than one that refuses.
 | `META_GRAPH_API_VERSION "vXX.X" is not a valid Graph API version` | Use a real version such as `v26.0`. |
 | `WHATSAPP_PHONE_NUMBER_ID must be the numeric Phone Number ID` | You pasted the phone number, the WABA ID or the App ID. Use the Phone Number ID from WhatsApp → API Setup. |
 | `WHATSAPP_RECIPIENT_NUMBER equals WHATSAPP_SENDER_NUMBER` | Use a different recipient number. Self-messaging is not supported. |
-| `WHATSAPP_DELIVERY_MODE is "link" but PUBLIC_BASE_URL is not set` | Set `PUBLIC_BASE_URL`, or switch to `text` mode. |
+| `No public URL could be determined` (a warning) | Harmless on Render — `RENDER_EXTERNAL_URL` supplies it. Only set `PUBLIC_BASE_URL` for a custom domain. |
 | `META_VERIFY_TOKEN must not be the same value as META_ACCESS_TOKEN` | Invent a separate random string. |
 | `still contains a placeholder value` | You copied `.env.example` literally. Replace the value. |
 | `DAILY_CRON is not a valid cron expression` | `30 8 * * *` is 08:30. Five fields, space separated. |
@@ -55,6 +55,7 @@ Symptom: Meta's **Verify and save** button returns an error.
 1. `GET https://<your-service>.onrender.com/webhook?hub.mode=subscribe&hub.verify_token=<YOUR_TOKEN>&hub.challenge=12345`
    should return exactly `12345`. Try it in a browser first.
 2. If that returns 403, the token in the URL and `META_VERIFY_TOKEN` differ.
+   `/setup` tells you whether a verify token is configured at all.
    Watch for a trailing space when pasting.
 3. If it returns 404, the URL path is wrong — it must be `/webhook`, not
    `/webhooks`.
@@ -172,14 +173,16 @@ claimed as delivered.
 
 ## The WhatsApp button opens a broken or 404 page
 
-- The URL in the approved template must be
-  `https://<your-service>.onrender.com/p/{{1}}` with the variable at the very
-  end.
-- `PUBLIC_BASE_URL` must match that host exactly, with no trailing slash and
-  `https` in production.
-- Packs are stored on the service's disk. If the service redeployed since the
-  message was sent and there is no persistent disk, the pack file is gone and
-  the link 404s. Attach a Render disk and set `DATA_DIR=/var/data`.
+- Open `/setup` and compare the button URL it shows against the one in the
+  approved template. They must be identical, with `{{1}}` at the very end.
+- If the template was approved against an older host (for example before you
+  attached a custom domain), the template itself is wrong and needs re-approval.
+  Templates bake the host at creation time; the suffix is the only part that
+  varies per send.
+- Packs are stored on the service's disk. On a free instance the disk is wiped
+  by a redeploy **and** by a spin-down, so the pack file is gone and the link
+  shows the "no longer available" page. Attach a Render disk on a paid plan, or
+  read the pack soon after it arrives.
 
 ---
 

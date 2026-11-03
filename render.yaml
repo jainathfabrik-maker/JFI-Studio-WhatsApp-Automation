@@ -86,8 +86,10 @@ services:
         sync: false
       - key: WHATSAPP_SENDER_NUMBER
         sync: false
-      - key: PUBLIC_BASE_URL
-        sync: false
+      # PUBLIC_BASE_URL is intentionally NOT required. Render injects
+      # RENDER_EXTERNAL_URL automatically, and the app also derives its own
+      # origin from each request, so the URL never has to be copied by hand.
+      # Set it only if you attach a custom domain.
       - key: ADMIN_TRIGGER_TOKEN
         sync: false
       - key: OPENAI_API_KEY
