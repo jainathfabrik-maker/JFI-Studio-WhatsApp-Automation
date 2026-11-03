@@ -224,6 +224,8 @@ start, or the workflow firing twice all result in exactly one message.
 | `WHATSAPP_SENDER_NUMBER` | no | The business number, digits only, for the self-send guard. If blank the app looks it up from Meta. |
 | `META_GRAPH_API_VERSION` | no | Default `v26.0`. Raise deliberately after reading Meta's changelog. |
 | `WHATSAPP_DELIVERY_MODE` | no | `link` (default) or `text`. |
+| `STORAGE_DRIVER` | no | `file` (default) or `redis`. Use `redis` on a serverless host — see below. |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | required when `STORAGE_DRIVER=redis` | Upstash console → your database → REST API. |
 | `CONTENT_SOURCE` | no | `auto` (default: OpenAI if a key is set, else the built-in bank), `openai`, or `static`. |
 | `OPENAI_API_KEY` | no | OpenAI API project key. Separate billing from a ChatGPT subscription. |
 | `OPENAI_MODEL` | no | Default `gpt-6-luna`. |
@@ -393,24 +395,27 @@ WhatsApp button would 404 for almost every tap.
 serves every route — `/health`, `/status`, `/setup`, `/webhook`, `/admin/*` and
 `/p/:id`.
 
-**Three things genuinely do not work there, and this is not fixed:**
+**It needs `STORAGE_DRIVER=redis` to be correct there.** With the default `file`
+driver, serverless has no persistent disk, so:
 
 1. **Pack links usually 404.** Packs are written to `DATA_DIR`; a later request
    may land on a different or recycled instance, so the WhatsApp button shows
    "no longer available". Pack links are the delivery mechanism for `link` mode.
 2. **Duplicate protection does not survive.** The per-day run lock and webhook
-   de-duplication are local files, so they reset between invocations.
-3. **No in-process scheduler.** The daily run needs an external trigger — Vercel
-   Cron or the GitHub Actions workflow.
+   de-duplication are local files, so they reset between invocations — a
+   duplicate send becomes possible.
 
-What does work: signature-verified webhooks, inbound event handling, admin auth,
-`/health`, `/status` and `/setup`. `GET /status` reports
-`storage.persistent: false` with the same warning, so the limitation is visible
-at runtime and not only in this file.
+Setting `STORAGE_DRIVER=redis` with `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` fixes both: packs, the lock and de-duplication move to
+Redis. `GET /status` reports which driver is live and whether storage is
+persistent, and the app logs a warning at startup if it is on a serverless host
+with `file`.
 
-For a reliable deployment use Render's free plan (no `.env` file, no storage
-driver, no second service) or the `Dockerfile`. A pluggable store that would make
-Vercel viable is designed but **not implemented** — see
+Still true on Vercel either way: **no in-process scheduler** (the daily run needs
+Vercel Cron or the GitHub Actions workflow), and cold starts of a second or more.
+
+For the fewest moving parts use Render's free plan (`file` driver, no `.env`, no
+second service) or the `Dockerfile`. Details in
 [docs/STORAGE-PROPOSAL.md](docs/STORAGE-PROPOSAL.md).
 
 ---
