@@ -1,0 +1,90 @@
+name: CI
+
+# Render deploys this repository on every push to main (autoDeploy: true in
+# render.yaml), so a red build here means a red deploy there. This workflow is
+# the gate: tests, dependency audit, secret scan and blueprint validation.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Dependency audit
+        if: matrix.node == 22
+        run: npm audit --omit=dev
+
+      - name: Secret scan
+        if: matrix.node == 22
+        run: |
+          set -euo pipefail
+          found=$(grep -rnIE '(EAA[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY)' . \
+            --exclude-dir=node_modules --exclude-dir=.git --exclude=package-lock.json || true)
+          if [ -n "$found" ]; then
+            echo "::error::A credential-shaped string is in the repository."
+            echo "$found"
+            exit 1
+          fi
+          echo "No credential-shaped strings found."
+
+      - name: No committed .env
+        if: matrix.node == 22
+        run: |
+          set -euo pipefail
+          if find . -name '.env' -not -path './node_modules/*' | grep -q .; then
+            echo "::error::A .env file is committed to the repository."
+            exit 1
+          fi
+          echo "No .env file in the tree."
+
+      - name: Validate render.yaml
+        if: matrix.node == 22
+        run: node scripts/check-render-yaml.js
+
+      - name: Boot check
+        if: matrix.node == 22
+        run: |
+          set -euo pipefail
+          # Missing configuration must exit 1 with a readable message, not crash.
+          set +e
+          out=$(env -i PATH="$PATH" NODE_ENV=production node server.js 2>&1)
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then
+            echo "::error::server.js should exit 1 on missing configuration, exited $code"
+            echo "$out"
+            exit 1
+          fi
+          echo "$out" | grep -q "cannot start" || { echo "::error::startup message missing"; exit 1; }
+          echo "Startup validation behaves correctly."

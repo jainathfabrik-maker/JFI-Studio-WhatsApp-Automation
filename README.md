@@ -81,6 +81,8 @@ scripts/
   send-test.js             safe end-to-end test (supports --dry-run)
   discover-ids.js          prints your App ID, WABA ID and Phone Number ID from the API
   setup-meta.js            registers the webhook and creates the template via the Graph API
+  check-render-yaml.js     validates render.yaml before a deploy (no secrets, correct shape)
+.github/workflows/ci.yml   tests, audit, secret scan and blueprint check on every push
 tests/                     100 tests, node:test, no test framework dependency
 docs/
   AUDIT.md                 what was wrong with the previous code and why it changed
@@ -292,8 +294,16 @@ npm test
 verification, event deduplication, message sending and payload shape, Meta
 error mapping, retry and timeout behaviour, the daily-run guard, timezone and
 DST-boundary handling, rate limiting, the 24-hour window, the content brief's
-eight required items, and every HTTP route. They use a fake transport, so no
-network, credentials or Meta account is involved.
+eight required items, and every HTTP route. They use a fake transport, so no network,
+credentials or Meta account is involved.
+
+CI runs the same suite on Node 20 and 22 on every push to `main`, plus
+`npm audit`, a credential-shaped-string scan, a check that no `.env` is
+committed, `node scripts/check-render-yaml.js`, and a boot check confirming the
+service exits 1 with a readable message when configuration is missing. Because
+`render.yaml` sets `autoDeploy: true`, a red build means a red deploy — run
+`node scripts/check-render-yaml.js` locally before pushing if you change that
+file.
 
 ---
 
