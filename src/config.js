@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { isValidTimezone, normalizePhone } from './util.js';
+import { STORAGE_DRIVERS } from './store.js';
 
 /**
  * Canonical variable name -> legacy names still accepted so an existing
@@ -148,6 +149,33 @@ export function loadConfig(env = process.env) {
   // changes what the app can promise. Detected rather than configured so it
   // cannot drift out of sync with where the code actually runs.
   const isServerless = Boolean(env.VERCEL) || Boolean(env.NETLIFY) || Boolean(env.AWS_LAMBDA_FUNCTION_NAME);
+
+  // --- Storage -------------------------------------------------------------
+  const storageDriver = (get('STORAGE_DRIVER') || 'file').toLowerCase();
+  if (!STORAGE_DRIVERS.includes(storageDriver)) {
+    errors.push(
+      `STORAGE_DRIVER "${storageDriver}" is not supported. Use one of: ${STORAGE_DRIVERS.join(', ')}.` +
+        (storageDriver === 'vercel-blob'
+          ? ' The vercel-blob driver was considered and deliberately not built — see docs/STORAGE-PROPOSAL.md. Redis covers the same need without the lock race.'
+          : ''),
+    );
+  }
+
+  const redisUrl = String(env.UPSTASH_REDIS_REST_URL ?? '').trim().replace(/\/+$/, '');
+  const redisToken = String(env.UPSTASH_REDIS_REST_TOKEN ?? '').trim();
+  if (storageDriver === 'redis') {
+    if (!redisUrl) errors.push('STORAGE_DRIVER is "redis" but UPSTASH_REDIS_REST_URL is not set.');
+    if (!redisToken) errors.push('STORAGE_DRIVER is "redis" but UPSTASH_REDIS_REST_TOKEN is not set.');
+    if (redisUrl && !/^https:\/\/[^/]+$/.test(redisUrl)) {
+      errors.push('UPSTASH_REDIS_REST_URL must be an https URL such as https://xxx.upstash.io (no trailing slash, no path).');
+    }
+  }
+
+  if (storageDriver === 'file' && isServerless) {
+    warnings.push(
+      'Running on a serverless platform with STORAGE_DRIVER=file: there is no persistent disk, so pack links will usually 404 and the run lock and webhook de-duplication reset between invocations. Set STORAGE_DRIVER=redis with UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to fix this.',
+    );
+  }
 
   // --- Scheduler -----------------------------------------------------------
   const dailyCron = get('DAILY_CRON');
@@ -355,6 +383,8 @@ export function loadConfig(env = process.env) {
     timezone,
     dataDir,
     isServerless,
+    storageDriver,
+    redis: { url: redisUrl, token: redisToken },
     enableInternalCron,
     dailyCron: cronValid ? dailyCron : DEFAULTS.DAILY_CRON,
     graphApiVersion: graphVersion,
@@ -400,6 +430,7 @@ export function describeConfig(config) {
     deliveryMode: config.deliveryMode,
     baseUrlSource: config.baseUrlSource,
     serverless: config.isServerless,
+    storageDriver: config.storageDriver,
     contentSource: config.effectiveContentSource,
     templateName: config.templateName,
     templateLanguage: config.templateLanguage,

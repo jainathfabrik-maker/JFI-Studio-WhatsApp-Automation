@@ -47,7 +47,7 @@ const FAILURE_STATUSES = new Set(['failed']);
  * read receipt) so the HTTP 200 goes out promptly. Anything slower belongs in
  * a queue, not in the webhook handler.
  */
-export function processWebhookBody({ body, store, logger, whatsapp, autoMarkRead = false }) {
+export async function processWebhookBody({ body, store, logger, whatsapp, autoMarkRead = false }) {
   const summary = { entries: 0, messages: 0, statuses: 0, duplicates: 0, failures: 0, ignored: 0 };
 
   const entries = Array.isArray(body?.entry) ? body.entry : [];
@@ -64,15 +64,15 @@ export function processWebhookBody({ body, store, logger, whatsapp, autoMarkRead
 
       for (const message of value.messages ?? []) {
         const eventId = `msg:${message.id}`;
-        if (!message.id || store.hasSeenEvent(eventId)) {
+        if (!message.id || (await store.hasSeenEvent(eventId))) {
           summary.duplicates += 1;
           continue;
         }
-        store.markEventSeen(eventId);
+        await store.markEventSeen(eventId);
         summary.messages += 1;
 
         const from = message.from;
-        if (from) store.recordInbound(from);
+        if (from) await store.recordInbound(from);
 
         // Type only. Never log message bodies, media ids or phone numbers.
         logger.info('Inbound WhatsApp message', {
@@ -87,11 +87,11 @@ export function processWebhookBody({ body, store, logger, whatsapp, autoMarkRead
 
       for (const status of value.statuses ?? []) {
         const eventId = `status:${status.id}:${status.status}`;
-        if (!status.id || store.hasSeenEvent(eventId)) {
+        if (!status.id || (await store.hasSeenEvent(eventId))) {
           summary.duplicates += 1;
           continue;
         }
-        store.markEventSeen(eventId);
+        await store.markEventSeen(eventId);
         summary.statuses += 1;
 
         if (FAILURE_STATUSES.has(status.status)) {

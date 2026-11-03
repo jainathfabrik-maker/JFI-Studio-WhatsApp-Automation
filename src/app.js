@@ -80,8 +80,8 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
   });
 
   // --- Status ---------------------------------------------------------------
-  app.get('/status', (_req, res) => {
-    const lastRun = store.getLastRun();
+  app.get('/status', wrap(async (_req, res) => {
+    const lastRun = await store.getLastRun();
     res.json({
       ok: true,
       service: SERVICE_NAME,
@@ -98,13 +98,14 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
       },
       publicBaseUrl: config.resolvedBaseUrl || null,
       publicBaseUrlSource: config.baseUrlSource,
-      storage: config.isServerless
-        ? {
-            persistent: false,
-            note:
-              'Running on a serverless platform with no persistent disk. Content packs, the daily-run lock and webhook de-duplication live on the local filesystem, so pack links (/p/:id) will usually return "no longer available" and duplicate protection does not survive between invocations. Use a host with a persistent process and disk (Render, Docker, a VM) for reliable pack links.',
-          }
-        : { persistent: true, note: null },
+      storage: {
+        driver: config.storageDriver,
+        persistent: config.storageDriver !== 'file' || !config.isServerless,
+        note:
+          config.storageDriver === 'file' && config.isServerless
+            ? 'STORAGE_DRIVER=file on a serverless platform: there is no persistent disk, so pack links (/p/:id) will usually return "no longer available" and the run lock and webhook de-duplication reset between invocations. Set STORAGE_DRIVER=redis to fix this.'
+            : null,
+      },
       deliveryBlocked: safety.blocked,
       deliveryBlockedReason: safety.blocked ? safety.reason : null,
       lastRun: lastRun
@@ -112,7 +113,7 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
         : null,
       note: 'A "sent" status here means Meta accepted the message. Delivery is confirmed only by the WhatsApp status webhook.',
     });
-  });
+  }));
 
   // --- Meta webhook ---------------------------------------------------------
   app.get('/webhook', (req, res) => {
@@ -125,35 +126,39 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
     return res.status(200).type('text/plain').send(result.challenge);
   });
 
-  app.post('/webhook', webhookLimiter, (req, res) => {
-    const signature = verifySignature({
-      rawBody: req.rawBody,
-      header: req.get('x-hub-signature-256'),
-      appSecret: config.appSecret,
-    });
-
-    if (!signature.ok) {
-      logger.warn('Webhook rejected: bad signature', { reason: signature.reason });
-      return res.sendStatus(401);
-    }
-
-    try {
-      const summary = processWebhookBody({
-        body: req.body,
-        store,
-        logger,
-        whatsapp,
-        autoMarkRead: false,
+  app.post(
+    '/webhook',
+    webhookLimiter,
+    wrap(async (req, res) => {
+      const signature = verifySignature({
+        rawBody: req.rawBody,
+        header: req.get('x-hub-signature-256'),
+        appSecret: config.appSecret,
       });
-      logger.debug('Webhook processed', summary);
-    } catch (error) {
-      // Acknowledge anyway: Meta retries on non-2xx, and a parsing bug here
-      // must not turn into an endless retry storm.
-      logger.error('Webhook processing error', { message: error.message });
-    }
 
-    return res.sendStatus(200);
-  });
+      if (!signature.ok) {
+        logger.warn('Webhook rejected: bad signature', { reason: signature.reason });
+        return res.sendStatus(401);
+      }
+
+      try {
+        const summary = await processWebhookBody({
+          body: req.body,
+          store,
+          logger,
+          whatsapp,
+          autoMarkRead: false,
+        });
+        logger.debug('Webhook processed', summary);
+      } catch (error) {
+        // Acknowledge anyway: Meta retries on non-2xx, and a storage or parsing
+        // bug here must not turn into an endless retry storm.
+        logger.error('Webhook processing error', { message: error.message });
+      }
+
+      return res.sendStatus(200);
+    }),
+  );
 
   // --- Admin ----------------------------------------------------------------
   app.post(
@@ -225,16 +230,19 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
   });
 
   // --- Pack page (the WhatsApp template button target) ----------------------
-  app.get('/p/:id', (req, res) => {
-    const pack = store.getPackById(req.params.id);
-    if (!pack) {
+  app.get(
+    '/p/:id',
+    wrap(async (req, res) => {
+      const pack = await store.getPackById(req.params.id);
+      if (!pack) {
+        res.set('Cache-Control', 'no-store');
+        return res.status(404).type('html').send(renderPackMissing());
+      }
       res.set('Cache-Control', 'no-store');
-      return res.status(404).type('html').send(renderPackMissing());
-    }
-    res.set('Cache-Control', 'no-store');
-    res.set('X-Robots-Tag', 'noindex, nofollow');
-    return res.type('html').send(renderPackPage(pack));
-  });
+      res.set('X-Robots-Tag', 'noindex, nofollow');
+      return res.type('html').send(renderPackPage(pack));
+    }),
+  );
 
   // --- Fallbacks ------------------------------------------------------------
   app.use((req, res) => {

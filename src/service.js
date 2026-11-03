@@ -16,8 +16,20 @@ import { requestJson } from './http.js';
  * business number, and every delivery path refuses while it is set.
  */
 export function createService({ config, logger, http = requestJson, now = () => Date.now() }) {
-  const store = createStore({ dir: config.dataDir, logger, now });
-  store.init();
+  const store = createStore({
+    driver: config.storageDriver,
+    dir: config.dataDir,
+    logger,
+    now,
+    http,
+    redis: config.redis,
+  });
+  // Not awaited: init only warms the driver and surfaces a bad URL or token
+  // early. Each driver method is self-sufficient, so a request never depends on
+  // this having finished.
+  Promise.resolve(store.init()).catch((error) =>
+    logger.error('Storage driver failed to initialise', { driver: store.driver, message: error.message }),
+  );
 
   const safety = { blocked: false, reason: null };
 

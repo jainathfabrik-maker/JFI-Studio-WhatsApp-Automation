@@ -78,7 +78,7 @@ export function createDailyRunner({
     }
 
     // Free-form text: only legal inside the 24-hour customer service window.
-    if (!store.isWithinServiceWindow(to)) {
+    if (!(await store.isWithinServiceWindow(to))) {
       throw new DeliveryError(
         'Refusing to send free-form text: the 24-hour customer service window is closed for this recipient. WhatsApp requires an approved template for business-initiated messages. Switch WHATSAPP_DELIVERY_MODE to "link", or have the recipient message the business number first.',
         { code: 'window-closed', status: 409 },
@@ -102,7 +102,7 @@ export function createDailyRunner({
    */
   async function runDaily({ trigger = 'manual', force = false, nowMs = now(), publicBaseUrl } = {}) {
     const dateKey = dateKeyInTz(config.timezone, nowMs);
-    const lock = store.tryAcquireRunLock(dateKey);
+    const lock = await store.tryAcquireRunLock(dateKey);
 
     if (!lock.acquired) {
       logger.info('Daily run skipped', { trigger, date: dateKey, reason: lock.reason });
@@ -110,7 +110,7 @@ export function createDailyRunner({
     }
 
     try {
-      const existing = store.getPackByDate(dateKey);
+      const existing = await store.getPackByDate(dateKey);
       if (existing?.status === 'sent' && !force) {
         logger.info('Daily run skipped: pack already sent today', { trigger, date: dateKey });
         return { ok: true, skipped: true, reason: 'already-sent-today', date: dateKey, packId: existing.id };
@@ -140,7 +140,7 @@ export function createDailyRunner({
         mode: delivery.mode,
       });
 
-      store.recordRun({
+      await store.recordRun({
         date: dateKey,
         status: 'sent',
         trigger,
@@ -167,7 +167,7 @@ export function createDailyRunner({
         deliveryConfirmed: false,
       };
     } catch (error) {
-      store.recordRun({
+      await store.recordRun({
         date: dateKey,
         status: 'failed',
         trigger,
@@ -183,13 +183,13 @@ export function createDailyRunner({
       });
       throw error;
     } finally {
-      store.releaseRunLock();
+      await store.releaseRunLock();
     }
   }
 
   /** Re-send the most recent pack. Used by the safe test path and by retries. */
   async function resendLatest({ force = false, publicBaseUrl } = {}) {
-    const pack = store.latestPack();
+    const pack = await store.latestPack();
     if (!pack) {
       throw new DeliveryError('No pack has been generated yet. Run the daily job once before resending.', {
         code: 'no-pack',
