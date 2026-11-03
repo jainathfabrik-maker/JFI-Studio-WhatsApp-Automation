@@ -77,7 +77,7 @@ src/
   app.js                   Express routes and middleware
   service.js               wiring
 scripts/
-  run-daily.js             Render Cron Job entry point
+  run-daily.js             standalone trigger script (GitHub Actions or a Render cron job)
   send-test.js             safe end-to-end test (supports --dry-run)
   discover-ids.js          prints your App ID, WABA ID and Phone Number ID from the API
   setup-meta.js            registers the webhook and creates the template via the Graph API
@@ -183,7 +183,7 @@ private, they draw on the account's included Actions minutes — a daily job of 
 few seconds each is negligible.
 
 **If you would rather pay $7/month** for an always-on instance, you can also use
-`scripts/run-daily.js` as a Render Cron Job instead, or set
+`scripts/run-daily.js` as a paid Render cron job instead, or set
 `ENABLE_INTERNAL_CRON=true` to use the in-process timer. The in-process timer is
 the weakest option: it dies with the process, so a restart at 08:29 means no
 pack that day.

@@ -127,14 +127,17 @@ Check in this order:
 
 1. `GET /status` → `lastRun`. Is there a run today at all?
 2. Is `ENABLE_INTERNAL_CRON=true`? If not, nothing runs inside the service —
-   you need the Render Cron Job, or a manual `POST /admin/run-daily`.
-3. Render Cron Job: is its **schedule in UTC**? `0 3 * * *` is 08:30 IST.
-   `30 8 * * *` in a Render cron job is 13:30 IST — a very common mistake.
-4. Did the cron job fail? Open its run history in Render. The script exits
-   non-zero with a reason: `PUBLIC_BASE_URL is not set`,
-   `ADMIN_TRIGGER_TOKEN is not set`, `HTTP 401`, `HTTP 503`.
-5. Is the web service asleep? A free-tier instance cold-starts on the request;
-   the script retries for about 30 seconds.
+   you need the GitHub Actions workflow, or a manual `POST /admin/run-daily`.
+3. GitHub Actions: open the **Actions** tab and look at the *Daily content pack*
+   runs. A red run names the reason. The two usual ones are a missing
+   `PUBLIC_BASE_URL` repository variable and a missing `ADMIN_TRIGGER_TOKEN`
+   secret — both under Settings → Secrets and variables → Actions.
+4. If you use a Render cron job instead, its schedule is **UTC**: `0 3 * * *`
+   is 08:30 IST. `30 8 * * *` would fire at 13:30 IST — a very common mistake.
+   Its run history shows why it failed; the script exits non-zero with a reason
+   such as `PUBLIC_BASE_URL is not set` or `HTTP 401`.
+5. Is the web service asleep? A free-tier instance cold-starts on the first
+   request; the workflow retries for up to five attempts over about 80 seconds.
 
 ---
 

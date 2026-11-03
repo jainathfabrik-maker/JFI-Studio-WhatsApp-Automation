@@ -41,8 +41,9 @@ delivered — those need your accounts and credentials.
       metadata. The brief is enforced in code (hook length, number-or-place,
       banned words, hashtag/shot/on-screen counts, UTM slug, IST time), not just
       asked for in the prompt.
-- [x] Daily schedule at 08:30 Asia/Kolkata via an external Render Cron Job,
-      with an opt-in in-process timer as an alternative.
+- [x] Daily schedule at 08:30 Asia/Kolkata via `.github/workflows/daily.yml`
+      (free), with a paid Render cron job or the in-process timer as
+      alternatives.
 - [x] Idempotent per calendar day: a restart, a second instance or a duplicate
       scheduler hit cannot send twice.
 - [x] OpenAI key only through environment variables; no hardcoded secrets.
@@ -58,11 +59,14 @@ delivered — those need your accounts and credentials.
 - [x] Rate limiting / abuse protection on the webhook and admin surfaces.
 - [x] Data retention, consent, opt-out and WhatsApp policy documented
       ([POLICY.md](POLICY.md)).
-- [x] 100 automated tests: webhook verification, signature validation, sending,
+- [x] 102 automated tests: webhook verification, signature validation, sending,
       invalid configuration, error handling, dedupe, run guard, timezone and
       DST boundaries, rate limiting, 24-hour window, the eight pack items, every
       route.
-- [x] All 100 tests pass (`npm test`).
+- [x] All 102 tests pass locally, and **CI passes on GitHub's runners for both
+      Node 22 and Node 24** (verified from the Actions API, not assumed).
+- [x] `Dockerfile` included, so the app runs on any container host if Render
+      stops suiting.
 - [x] `npm audit` reports **0 vulnerabilities**; `node-cron` upgraded to v4
       (no dependencies) to clear the transitive `uuid` advisory.
 - [x] Secret scan: no credential-shaped strings and no `.env` file in the tree.
@@ -108,13 +112,21 @@ in some cases your judgement.
 
 ### Render
 
-- [ ] Connect the repository and apply `render.yaml`.
+- [ ] Connect the repository and apply `render.yaml` (now on the free plan).
 - [ ] Enter every `sync: false` variable in the dashboard.
-- [ ] Set `PUBLIC_BASE_URL` to the real service URL.
+- [ ] Copy the service URL into `PUBLIC_BASE_URL` and redeploy.
 - [ ] Set `ADMIN_TRIGGER_TOKEN` (32+ characters).
-- [ ] Create the Cron Job at `0 3 * * *` UTC with `node scripts/run-daily.js`.
-- [ ] Consider attaching the persistent disk (commented in `render.yaml`) and
-      setting `DATA_DIR=/var/data`, so pack links survive a redeploy.
+
+### GitHub (the free scheduler)
+
+- [ ] Settings → Secrets and variables → Actions → **Variables**: add
+      `PUBLIC_BASE_URL`.
+- [ ] Settings → Secrets and variables → Actions → **Secrets**: add
+      `ADMIN_TRIGGER_TOKEN` with the same value as on Render.
+- [ ] Run the *Daily content pack* workflow once by hand to confirm it returns
+      200.
+- [ ] Optional: attach the persistent disk (commented in `render.yaml`) on a
+      paid plan so pack links survive a restart.
 - [ ] Deploy and confirm `GET /health` returns `{"ok":true}`.
 - [ ] Run `GET /admin/diagnostics` and confirm
       `senderMatchesRecipient: false`.
