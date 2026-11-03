@@ -98,6 +98,13 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
       },
       publicBaseUrl: config.resolvedBaseUrl || null,
       publicBaseUrlSource: config.baseUrlSource,
+      storage: config.isServerless
+        ? {
+            persistent: false,
+            note:
+              'Running on a serverless platform with no persistent disk. Content packs, the daily-run lock and webhook de-duplication live on the local filesystem, so pack links (/p/:id) will usually return "no longer available" and duplicate protection does not survive between invocations. Use a host with a persistent process and disk (Render, Docker, a VM) for reliable pack links.',
+          }
+        : { persistent: true, note: null },
       deliveryBlocked: safety.blocked,
       deliveryBlockedReason: safety.blocked ? safety.reason : null,
       lastRun: lastRun

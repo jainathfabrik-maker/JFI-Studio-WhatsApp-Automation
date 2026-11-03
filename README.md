@@ -77,6 +77,8 @@ src/
   rateLimit.js             in-memory fixed-window abuse protection
   app.js                   Express routes and middleware
   service.js               wiring
+api/index.js               Vercel serverless entry point (exports the app, no listener)
+vercel.json                routes every path to api/index.js
 scripts/
   run-daily.js             standalone trigger script (GitHub Actions or a Render cron job)
   send-test.js             safe end-to-end test (supports --dry-run)
@@ -93,6 +95,7 @@ docs/
   META-WEBHOOK-SETUP.md    exact Meta dashboard steps
   TROUBLESHOOTING.md       every error you are likely to hit
   POLICY.md                data retention, consent, opt-out, WhatsApp policy
+  STORAGE-PROPOSAL.md      proposed pluggable store (not implemented)
   CHECKLIST.md             done / tested / still needs you
 render.yaml                Render Blueprint (web service)
 .env.example               every variable, documented, no real values
@@ -381,6 +384,34 @@ trusting a free tier with a business workflow.
 changing where packs are stored. The code deliberately keeps them on local disk
 because that is correct for a single always-on service. On serverless, the
 WhatsApp button would 404 for almost every tap.
+
+---
+
+## Running on Vercel
+
+`api/index.js` and `vercel.json` are included, so the app deploys to Vercel and
+serves every route — `/health`, `/status`, `/setup`, `/webhook`, `/admin/*` and
+`/p/:id`.
+
+**Three things genuinely do not work there, and this is not fixed:**
+
+1. **Pack links usually 404.** Packs are written to `DATA_DIR`; a later request
+   may land on a different or recycled instance, so the WhatsApp button shows
+   "no longer available". Pack links are the delivery mechanism for `link` mode.
+2. **Duplicate protection does not survive.** The per-day run lock and webhook
+   de-duplication are local files, so they reset between invocations.
+3. **No in-process scheduler.** The daily run needs an external trigger — Vercel
+   Cron or the GitHub Actions workflow.
+
+What does work: signature-verified webhooks, inbound event handling, admin auth,
+`/health`, `/status` and `/setup`. `GET /status` reports
+`storage.persistent: false` with the same warning, so the limitation is visible
+at runtime and not only in this file.
+
+For a reliable deployment use Render's free plan (no `.env` file, no storage
+driver, no second service) or the `Dockerfile`. A pluggable store that would make
+Vercel viable is designed but **not implemented** — see
+[docs/STORAGE-PROPOSAL.md](docs/STORAGE-PROPOSAL.md).
 
 ---
 

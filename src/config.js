@@ -144,6 +144,11 @@ export function loadConfig(env = process.env) {
 
   const dataDir = get('DATA_DIR');
 
+  // Serverless platforms recycle instances and give no persistent disk, which
+  // changes what the app can promise. Detected rather than configured so it
+  // cannot drift out of sync with where the code actually runs.
+  const isServerless = Boolean(env.VERCEL) || Boolean(env.NETLIFY) || Boolean(env.AWS_LAMBDA_FUNCTION_NAME);
+
   // --- Scheduler -----------------------------------------------------------
   const dailyCron = get('DAILY_CRON');
   const cronValid = cron.validate(dailyCron);
@@ -277,13 +282,23 @@ export function loadConfig(env = process.env) {
     );
   }
 
-  // Render injects RENDER_EXTERNAL_URL (e.g. https://myapp.onrender.com) for
-  // every web service at runtime, so the app knows its own address without
-  // anyone copying it into a variable. PUBLIC_BASE_URL stays as an explicit
-  // override for a custom domain.
-  const renderExternalUrl = String(env.RENDER_EXTERNAL_URL ?? '')
-    .trim()
-    .replace(/\/+$/, '');
+  // Hosts inject their own public URL. Read whichever one is present so nobody
+  // has to copy an address into a variable by hand:
+  //   Render  -> RENDER_EXTERNAL_URL (already a full URL)
+  //   Vercel  -> VERCEL_PROJECT_PRODUCTION_URL / VERCEL_URL (host only, no scheme)
+  // PUBLIC_BASE_URL stays as an explicit override for a custom domain.
+  const asOrigin = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    return withScheme.replace(/\/+$/, '');
+  };
+
+  // Render always supplies a full URL, so anything else there is junk and is
+  // ignored. Vercel supplies a bare hostname, so a scheme is added for it.
+  const renderRaw = String(env.RENDER_EXTERNAL_URL ?? '').trim().replace(/\/+$/, '');
+  const renderExternalUrl = /^https?:\/\/[^/]+$/.test(renderRaw) ? renderRaw : '';
+  const vercelUrl = asOrigin(env.VERCEL_PROJECT_PRODUCTION_URL || env.VERCEL_URL);
 
   let publicBaseUrl = (values.PUBLIC_BASE_URL ?? '').replace(/\/+$/, '');
   if (publicBaseUrl) {
@@ -298,12 +313,15 @@ export function loadConfig(env = process.env) {
       publicBaseUrl = '';
     }
   }
-  const resolvedBaseUrl = publicBaseUrl || (/^https?:\/\/[^/]+$/.test(renderExternalUrl) ? renderExternalUrl : '');
+  const hostUrl = [renderExternalUrl, vercelUrl].find((candidate) => /^https?:\/\/[^/]+$/.test(candidate)) ?? '';
+  const resolvedBaseUrl = publicBaseUrl || hostUrl;
   const baseUrlSource = publicBaseUrl
     ? 'PUBLIC_BASE_URL'
-    : resolvedBaseUrl
+    : renderExternalUrl && resolvedBaseUrl === renderExternalUrl
       ? 'RENDER_EXTERNAL_URL'
-      : 'unresolved';
+      : vercelUrl && resolvedBaseUrl === vercelUrl
+        ? 'VERCEL_URL'
+        : 'unresolved';
 
   // Deliberately a warning, not an error. On a first deploy nobody can know the
   // URL before Render creates the service, so refusing to boot would crash-loop
@@ -336,6 +354,7 @@ export function loadConfig(env = process.env) {
     logLevel,
     timezone,
     dataDir,
+    isServerless,
     enableInternalCron,
     dailyCron: cronValid ? dailyCron : DEFAULTS.DAILY_CRON,
     graphApiVersion: graphVersion,
@@ -380,6 +399,7 @@ export function describeConfig(config) {
     appId: config.appId || undefined,
     deliveryMode: config.deliveryMode,
     baseUrlSource: config.baseUrlSource,
+    serverless: config.isServerless,
     contentSource: config.effectiveContentSource,
     templateName: config.templateName,
     templateLanguage: config.templateLanguage,
