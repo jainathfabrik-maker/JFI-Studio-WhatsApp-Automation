@@ -10,7 +10,8 @@ const ALIASES = {
   META_ACCESS_TOKEN: ['WHATSAPP_ACCESS_TOKEN'],
   META_APP_SECRET: ['WHATSAPP_APP_SECRET'],
   META_VERIFY_TOKEN: ['WHATSAPP_VERIFY_TOKEN'],
-  META_GRAPH_API_VERSION: ['WHATSAPP_GRAPH_VERSION'],
+  META_GRAPH_API_VERSION: ['META_API_VERSION', 'WHATSAPP_GRAPH_VERSION'],
+  DAILY_CRON: ['DAILY_SCHEDULE'],
   WHATSAPP_RECIPIENT_NUMBER: ['WHATSAPP_RECIPIENT'],
 };
 
@@ -39,6 +40,7 @@ const LOCATION = {
   WHATSAPP_RECIPIENT_NUMBER: 'Render → Environment (a number you control, different from the business number)',
   ADMIN_TRIGGER_TOKEN: 'Render → Environment (a long random string you invent)',
   PUBLIC_BASE_URL: 'Render → Environment (your service URL, e.g. https://your-service.onrender.com)',
+  META_APP_ID: 'Render → Environment (from Meta App Dashboard → App settings → Basic)',
 };
 
 const DEFAULTS = {
@@ -63,7 +65,7 @@ const DEFAULTS = {
 };
 
 const DELIVERY_MODES = new Set(['link', 'text']);
-const TEMPLATE_BODY_FIELDS = new Set(['dateLabel', 'pillar', 'hook', 'format', 'publishTimeIST']);
+const TEMPLATE_BODY_FIELDS = new Set(['dateLabel', 'pillar', 'hook', 'format', 'concept', 'publishTimeIST']);
 const CONTENT_SOURCES = new Set(['auto', 'openai', 'static']);
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error', 'silent']);
 const PLACEHOLDER_VALUES = new Set([
@@ -193,6 +195,18 @@ export function loadConfig(env = process.env) {
     warnings.push('WHATSAPP_BUSINESS_ACCOUNT_ID should be numeric digits only; it will be ignored if invalid.');
   }
 
+  const appId = get('META_APP_ID') ?? '';
+  if (appId && !/^\d{5,25}$/.test(appId)) {
+    errors.push(
+      `META_APP_ID "${appId}" is not numeric. It is the App ID from App settings → Basic — not the Phone Number ID and not the WABA ID.`,
+    );
+  }
+  if (!appId) {
+    warnings.push(
+      'META_APP_ID is not set. It is only needed for webhook-subscription tooling (scripts/setup-meta.js); the service itself does not require it.',
+    );
+  }
+
   const recipientRaw = values.WHATSAPP_RECIPIENT_NUMBER ?? '';
   const recipient = normalizePhone(recipientRaw);
   if (recipientRaw && !/^\d{8,15}$/.test(recipient)) {
@@ -307,6 +321,7 @@ export function loadConfig(env = process.env) {
     graphBaseUrl: `https://graph.facebook.com/${graphVersion}`,
     phoneNumberId,
     businessAccountId,
+    appId,
     recipientNumber: recipient,
     senderNumber,
     accessToken,
@@ -338,6 +353,7 @@ export function describeConfig(config) {
     port: config.port,
     timezone: config.timezone,
     graphApiVersion: config.graphApiVersion,
+    appId: config.appId || undefined,
     deliveryMode: config.deliveryMode,
     contentSource: config.effectiveContentSource,
     templateName: config.templateName,

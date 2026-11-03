@@ -38,6 +38,9 @@ export function validatePack(pack) {
 
   if (!PILLARS.includes(str('pillar'))) problems.push(`pillar must be one of: ${PILLARS.join(', ')}`);
   if (!str('format')) problems.push('format is required (format and duration, e.g. "Reel, 24–30s, vertical 9:16")');
+  if (str('concept').length < 40) {
+    problems.push('concept is required and must describe the actual short-form video or post idea (at least 40 characters)');
+  }
 
   const hook = str('hook');
   if (!hook) problems.push('hook is required');
@@ -57,6 +60,16 @@ export function validatePack(pack) {
   if (hashtags.some((tag) => !tag.trim().startsWith('#'))) problems.push('every hashtag must start with "#"');
 
   if (arr('shotList').length < 3) problems.push('shotList must contain at least 3 concrete shots');
+  if (arr('onScreenText').length < 2) problems.push('onScreenText must contain at least 2 on-screen text lines');
+
+  const tracking = pack.tracking;
+  if (!tracking || typeof tracking !== 'object' || Array.isArray(tracking)) {
+    problems.push('tracking is required, e.g. { "metric": "saves", "utmCampaign": "reel_x" }');
+  } else {
+    if (!String(tracking.metric ?? '').trim()) problems.push('tracking.metric is required (what you will measure)');
+    if (!String(tracking.utmCampaign ?? '').trim()) problems.push('tracking.utmCampaign is required');
+    if (/\s/.test(String(tracking.utmCampaign ?? ''))) problems.push('tracking.utmCampaign must not contain spaces');
+  }
 
   const publish = str('publishTimeIST');
   if (!publish) problems.push('publishTimeIST is required');
@@ -76,6 +89,10 @@ export function validatePack(pack) {
 const STATIC_PACKS = {
   'proof of work': {
     format: 'Reel, 24–30s, vertical 9:16, no voiceover — on-screen text only',
+    concept:
+      'A weekly site-visit log compressed into one reel: the same doorway shot on six different Saturdays, cut in chronological order, so the build speed is visible without a single claim about it.',
+    onScreenText: ['Week 1 — demolition', 'Week 3 — plumbing rough-in', 'Week 5 — false ceiling', 'Week 8 — carpentry', 'Week 11 — handover'],
+    tracking: { metric: 'saves', utmCampaign: 'reel_indiranagar_11weeks' },
     hook: 'Indiranagar 3BHK: 11 weeks, one site visit a week',
     caption:
       'A 3BHK in Indiranagar, handed over in 11 weeks with a weekly site visit logged every Saturday. This reel is the actual sequence: demolition, plumbing rough-in, false ceiling framing, carpentry, painting, handover. No renders, no before-and-after trickery — the same rooms in the same order we worked on them.',
@@ -93,6 +110,10 @@ const STATIC_PACKS = {
   },
   'price transparency': {
     format: 'Carousel, 6 slides, 1080×1350, plus a 15s Reel cut',
+    concept:
+      'A cost split that builds one line item per slide and only reveals the total at the end, so the reader has already accepted the components before seeing the number.',
+    onScreenText: ['Civil + plumbing', 'Electrical + false ceiling', 'Kitchen + wardrobes', 'Painting + hardware', 'Site supervision', 'Total range'],
+    tracking: { metric: 'saves and comment replies', utmCampaign: 'carousel_cost_split_2bhk' },
     hook: 'What ₹18 lakh actually buys in a 2BHK, line by line',
     caption:
       'An honest cost split for a 1,050 sq ft 2BHK refurbishment in Bengaluru: civil and plumbing, electrical, false ceiling, modular kitchen, wardrobes, painting, and the site supervision line most quotes hide. Figures are ranges from our own 2025–26 work, not a quotation, and they change with material grade and building rules.',
@@ -110,6 +131,10 @@ const STATIC_PACKS = {
   },
   process: {
     format: 'Reel, 30–40s, vertical 9:16, text overlays at each checkpoint',
+    concept:
+      'One continuous walk from the front door to the last checkpoint, with each of the fourteen checks stamped on screen as it is passed — no cuts, so nothing can be staged.',
+    onScreenText: ['1 — door alignment', '5 — drawer travel', '8 — plumbing leak test', '11 — MCB labelling', '14 — paint sheen in daylight'],
+    tracking: { metric: 'shares', utmCampaign: 'reel_handover_14_checkpoints' },
     hook: 'Whitefield handover: 14 checkpoints before we hand over keys',
     caption:
       'We do not hand over keys on a phone call. This is the 14-point check we run on every Whitefield and Sarjapur project: door alignment, drawer travel, plumbing leak test, MCB labelling, tile lippage, paint sheen under daylight, and the rest. If a checkpoint fails, the handover moves — not the checklist.',
@@ -126,6 +151,10 @@ const STATIC_PACKS = {
   },
   education: {
     format: 'Carousel, 5 slides, 1080×1350 — flat diagrams, no stock photos',
+    concept:
+      'A tabletop explainer: three plywood sheets side by side, then the camera cuts to the exact cabinet each grade belongs in, ending on the sink base everyone skips.',
+    onScreenText: ['Grade 1 — dry zones only', 'Grade 2 — wet zones', 'Grade 3 — sink base', 'Never use grade 1 under a sink'],
+    tracking: { metric: 'saves', utmCampaign: 'carousel_plywood_grades' },
     hook: '3 plywood grades and where each one belongs in Bengaluru',
     caption:
       'Most moisture damage in Bengaluru kitchens starts with the wrong plywood in the wrong place. This carousel explains the three grades we actually specify, what each costs per sheet, and the exact locations each one belongs in — including the one spot people skip: the sink cabinet base.',
@@ -142,6 +171,10 @@ const STATIC_PACKS = {
   },
   people: {
     format: 'Reel, 20–25s, vertical 9:16, one continuous interview take',
+    concept:
+      'One uninterrupted handheld answer from the site supervisor in a finished kitchen — no music, no B-roll until the final four seconds — so the expertise is the whole point.',
+    onScreenText: ['Ramesh — site supervisor', '60 kitchens in Jayanagar and Basavanagudi', 'The check before the countertop template'],
+    tracking: { metric: 'profile visits', utmCampaign: 'reel_supervisor_jayanagar' },
     hook: 'Our site supervisor has finished 60 Jayanagar kitchens',
     caption:
       'Ramesh has finished 60 kitchens in Jayanagar and Basavanagudi, and he can tell from the sound of a drawer whether the channel is aligned. Twenty seconds of him explaining the one thing he checks before the countertop template goes in. The people who build your interiors are the product.',
@@ -157,6 +190,10 @@ const STATIC_PACKS = {
   },
   trust: {
     format: 'Static post, 1080×1350, plain text on a neutral background',
+    concept:
+      'A plain text card listing the nine clause headings, with two circled — payment milestones, and the delay clause that binds the studio as well as the client.',
+    onScreenText: ['Clause 3 — payment milestones', 'Clause 7 — delay clause, applies to us too', 'Clause 9 — handover checklist'],
+    tracking: { metric: 'comment replies', utmCampaign: 'static_contract_nine_clauses' },
     hook: 'Read the 9-clause contract before you pay any advance',
     caption:
       'Nine clauses we put in every JFI Studio contract, and why each one exists: payment linked to milestones, a written change-order process, material brand substitution rules, a delay clause that binds us too, and a defined handover checklist. If a contractor will not show you their contract before you pay, that is the answer.',
@@ -178,11 +215,14 @@ function buildStaticPack({ timezone, now }) {
   return {
     pillar,
     format: source.format,
+    concept: source.concept,
     hook: source.hook,
     caption: source.caption,
     cta: source.cta,
     hashtags: [...source.hashtags],
     shotList: [...source.shotList],
+    onScreenText: [...source.onScreenText],
+    tracking: { ...source.tracking },
     publishTimeIST: source.publishTimeIST,
   };
 }
@@ -190,15 +230,38 @@ function buildStaticPack({ timezone, now }) {
 const RESPONSE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['pillar', 'format', 'hook', 'caption', 'cta', 'hashtags', 'shotList', 'publishTimeIST'],
+  required: [
+    'pillar',
+    'format',
+    'concept',
+    'hook',
+    'caption',
+    'cta',
+    'hashtags',
+    'shotList',
+    'onScreenText',
+    'tracking',
+    'publishTimeIST',
+  ],
   properties: {
     pillar: { type: 'string', enum: PILLARS },
     format: { type: 'string' },
+    concept: { type: 'string' },
     hook: { type: 'string' },
     caption: { type: 'string' },
     cta: { type: 'string' },
     hashtags: { type: 'array', items: { type: 'string' } },
     shotList: { type: 'array', items: { type: 'string' } },
+    onScreenText: { type: 'array', items: { type: 'string' } },
+    tracking: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['metric', 'utmCampaign'],
+      properties: {
+        metric: { type: 'string' },
+        utmCampaign: { type: 'string' },
+      },
+    },
     publishTimeIST: { type: 'string' },
   },
 };
@@ -210,13 +273,16 @@ function buildPrompt({ dateLabel, pillar, problems }) {
     `Today is ${dateLabel}. Content pillar for today: ${pillar}.`,
     '',
     'Return one pack with exactly these fields:',
-    '- format: the format and duration, e.g. "Reel, 24-30s, vertical 9:16".',
+    '- format: the publishing format and duration, e.g. "Reel, 24-30s, vertical 9:16".',
+    '- concept: two or three sentences describing the actual short-form video or post idea for a Bengaluru interior customer. This is the creative idea, not a restatement of the format.',
     '- pillar: repeat the pillar exactly as given above.',
     '- hook: at most 12 words, and it must contain a number or a Bengaluru place name.',
     '- caption: ready to publish, 400-900 characters, specific and plain.',
-    '- cta: one clear call to action that works on WhatsApp.',
+    '- cta: one clear call to action that works on WhatsApp. It must not promise anything the studio has not agreed to.',
     '- hashtags: 6-8 tags, each starting with #.',
     '- shotList: 4-6 concrete, filmable shots with timings or framing.',
+    '- onScreenText: 3-5 short lines that appear as text on screen, in order.',
+    '- tracking: an object with "metric" (what you will measure, e.g. saves, shares, comment replies) and "utmCampaign" (a lowercase slug with no spaces).',
     '- publishTimeIST: a suggested time in IST, e.g. "7:30 PM IST".',
     '',
     'Hard rules:',
@@ -385,6 +451,9 @@ export function packToText(pack) {
     `HOOK (max 12 words)`,
     pack.hook,
     '',
+    `CONCEPT`,
+    pack.concept,
+    '',
     `CAPTION`,
     pack.caption,
     '',
@@ -396,6 +465,13 @@ export function packToText(pack) {
     '',
     `SHOT LIST`,
     ...pack.shotList.map((shot, index) => `${index + 1}. ${shot}`),
+    '',
+    `ON-SCREEN TEXT`,
+    ...(pack.onScreenText ?? []).map((line) => `- ${line}`),
+    '',
+    `TRACKING`,
+    `Metric: ${pack.tracking?.metric ?? '—'}`,
+    `UTM campaign: ${pack.tracking?.utmCampaign ?? '—'}`,
     '',
     `PUBLISH: ${pack.publishTimeIST}`,
   ].join('\n');

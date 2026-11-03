@@ -20,6 +20,10 @@ export function renderPackPage(pack) {
     .map((shot, index) => `<li><span class="num">${index + 1}</span><span>${escapeHtml(shot)}</span></li>`)
     .join('');
 
+  const onScreen = (pack.onScreenText ?? [])
+    .map((line, index) => `<li><span class="num">${index + 1}</span><span>${escapeHtml(line)}</span></li>`)
+    .join('');
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -87,10 +91,13 @@ export function renderPackPage(pack) {
 
     ${section('Hook (max 12 words)', `<p class="hook">${escapeHtml(pack.hook)}</p>`)}
     ${section('Format and duration', `<p>${escapeHtml(pack.format)}</p>`)}
+    ${section('Concept', `<p>${escapeHtml(pack.concept ?? '')}</p>`)}
     ${section('Caption — ready to publish', `<p>${escapeHtml(pack.caption)}</p>`)}
     ${section('Call to action', `<p>${escapeHtml(pack.cta)}</p>`)}
     ${section('Hashtags', `<div>${hashtags}</div>`)}
     ${section('Shot list', `<ul>${shots}</ul>`)}
+    ${section('On-screen text', `<ul>${onScreen}</ul>`)}
+    ${section('Tracking', `<p>Metric: ${escapeHtml(pack.tracking?.metric ?? '—')}<br />UTM campaign: ${escapeHtml(pack.tracking?.utmCampaign ?? '—')}</p>`)}
     ${section('Publish time', `<p>${escapeHtml(pack.publishTimeIST)}</p>`)}
 
     <footer>

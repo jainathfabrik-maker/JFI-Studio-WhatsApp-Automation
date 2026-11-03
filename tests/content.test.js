@@ -6,9 +6,33 @@ import { buildService, fakeHttp } from './helpers.js';
 
 const FIXED_NOW = Date.UTC(2026, 10, 3, 6, 30); // 3 Nov 2026, 12:00 IST
 
+/** A pack that satisfies every rule, for tests that break one thing at a time. */
+function validPack(overrides = {}) {
+  return {
+    pillar: 'process',
+    format: 'Reel, 20s, vertical 9:16',
+    concept:
+      'One continuous walk from the front door to the last checkpoint, with each check stamped on screen as it is passed.',
+    hook: 'Whitefield handover: 14 checkpoints before keys',
+    caption: 'x'.repeat(120),
+    cta: 'WhatsApp us CHECKLIST and we will send the printable sheet.',
+    hashtags: ['#a', '#b', '#c', '#d', '#e'],
+    shotList: ['a', 'b', 'c'],
+    onScreenText: ['1 — door alignment', '5 — drawer travel', '8 — leak test'],
+    tracking: { metric: 'saves', utmCampaign: 'reel_handover_14_checkpoints' },
+    publishTimeIST: '7:30 PM IST',
+    ...overrides,
+  };
+}
+
 function staticService(env = {}) {
   return buildService({ env, now: () => FIXED_NOW });
 }
+
+test('a well-formed pack passes validation', () => {
+  const check = validatePack(validPack());
+  assert.equal(check.ok, true, check.problems.join('; '));
+});
 
 test('the static pack bank produces a valid pack for every pillar', async () => {
   const { service } = staticService();
@@ -21,84 +45,104 @@ test('the static pack bank produces a valid pack for every pillar', async () => 
     assert.equal(pack.source, 'static');
     assert.ok(pack.hashtags.length >= 5);
     assert.ok(pack.shotList.length >= 3);
+    assert.ok(pack.onScreenText.length >= 2);
+    assert.ok(pack.tracking.metric);
+    assert.ok(pack.tracking.utmCampaign);
+    assert.ok(pack.concept.length >= 40);
     seen.add(pack.pillar);
   }
   assert.equal(seen.size, PILLARS.length, 'all six pillars should appear across a rotation');
 });
 
+test('every pack carries all eight brief items', async () => {
+  const { service } = staticService();
+  const pack = await service.content.generate({ nowMs: FIXED_NOW });
+  // The brief's eight requirements, mapped to fields.
+  assert.ok(pack.format, '1. format and duration');
+  assert.ok(PILLARS.includes(pack.pillar), '2. content pillar');
+  assert.ok(pack.hook, '3. first-frame hook');
+  assert.ok(pack.concept.length > 40, '4. video or post concept');
+  assert.ok(pack.shotList.length && pack.onScreenText.length, '5. shot list and on-screen text');
+  assert.ok(pack.caption && pack.hashtags.length, '6. caption and hashtags');
+  assert.ok(pack.cta, '7. call to action');
+  assert.ok(pack.publishTimeIST && pack.tracking.utmCampaign, '8. publishing format and tracking');
+});
+
 test('validatePack rejects an over-long hook', () => {
-  const pack = {
-    pillar: 'process',
-    format: 'Reel, 20s',
-    hook: 'one two three four five six seven eight nine ten eleven twelve thirteen',
-    caption: 'x'.repeat(120),
-    cta: 'WhatsApp us',
-    hashtags: ['#a', '#b', '#c', '#d', '#e'],
-    shotList: ['a', 'b', 'c'],
-    publishTimeIST: '7:30 PM IST',
-  };
-  const check = validatePack(pack);
+  const check = validatePack(validPack({ hook: 'one two three four five six seven eight nine ten eleven twelve thirteen' }));
   assert.equal(check.ok, false);
   assert.match(check.problems.join('; '), /at most 12/);
 });
 
 test('validatePack requires a number or place name in the hook', () => {
-  const pack = {
-    pillar: 'process',
-    format: 'Reel, 20s',
-    hook: 'a quiet walkthrough of the finished flat',
-    caption: 'x'.repeat(120),
-    cta: 'WhatsApp us',
-    hashtags: ['#a', '#b', '#c', '#d', '#e'],
-    shotList: ['a', 'b', 'c'],
-    publishTimeIST: '7:30 PM IST',
-  };
-  assert.match(validatePack(pack).problems.join('; '), /number or a Bengaluru place name/);
+  const check = validatePack(validPack({ hook: 'a quiet walkthrough of the finished flat' }));
+  assert.match(check.problems.join('; '), /number or a Bengaluru place name/);
+});
+
+test('validatePack accepts a place name without a number', () => {
+  const check = validatePack(validPack({ hook: 'the Koramangala kitchen nobody wanted to rebuild' }));
+  assert.equal(check.ok, true, check.problems.join('; '));
 });
 
 test('validatePack catches off-brand words', () => {
-  const pack = {
-    pillar: 'trust',
-    format: 'Static post',
-    hook: 'Nine clauses before you pay any advance',
-    caption: `A luxury ${'x'.repeat(120)}`,
-    cta: 'WhatsApp us',
-    hashtags: ['#a', '#b', '#c', '#d', '#e'],
-    shotList: ['a', 'b', 'c'],
-    publishTimeIST: '7:30 PM IST',
-  };
-  assert.match(validatePack(pack).problems.join('; '), /luxury/);
+  const check = validatePack(validPack({ caption: `A luxury ${'x'.repeat(120)}` }));
+  assert.match(check.problems.join('; '), /luxury/);
 });
 
 test('validatePack rejects a missing publish time and short hashtag list', () => {
-  const problems = validatePack({ pillar: 'process', format: 'f', hook: '5 things', caption: 'x'.repeat(120), cta: 'c', hashtags: ['#a'], shotList: [], publishTimeIST: '' }).problems.join('; ');
+  const problems = validatePack(
+    validPack({ hashtags: ['#a'], shotList: [], publishTimeIST: '' }),
+  ).problems.join('; ');
   assert.match(problems, /at least 5/);
   assert.match(problems, /at least 3/);
   assert.match(problems, /publishTimeIST/);
 });
 
-test('packToText renders every required section', () => {
-  const pack = {
+test('validatePack requires the concept, on-screen text and tracking fields', () => {
+  const problems = validatePack(
+    validPack({ concept: 'too short', onScreenText: [], tracking: undefined }),
+  ).problems.join('; ');
+  assert.match(problems, /concept is required/);
+  assert.match(problems, /onScreenText/);
+  assert.match(problems, /tracking is required/);
+});
+
+test('validatePack rejects a tracking slug containing spaces', () => {
+  const problems = validatePack(
+    validPack({ tracking: { metric: 'saves', utmCampaign: 'reel with spaces' } }),
+  ).problems.join('; ');
+  assert.match(problems, /must not contain spaces/);
+});
+
+test('packToText renders every section including the new ones', () => {
+  const text = packToText({
+    ...validPack(),
     dateLabel: 'Tue 3 Nov 2026',
-    pillar: 'process',
-    format: 'Reel, 20s',
-    hook: 'Whitefield handover: 14 checkpoints',
-    caption: 'caption body',
-    cta: 'WhatsApp us',
     hashtags: ['#a', '#b'],
     shotList: ['shot one', 'shot two'],
-    publishTimeIST: '7:30 PM IST',
-  };
-  const text = packToText(pack);
-  for (const needle of ['HOOK', 'CAPTION', 'CALL TO ACTION', 'HASHTAGS', 'SHOT LIST', 'PUBLISH', '1. shot one']) {
+  });
+  for (const needle of [
+    'HOOK',
+    'CONCEPT',
+    'CAPTION',
+    'CALL TO ACTION',
+    'HASHTAGS',
+    'SHOT LIST',
+    'ON-SCREEN TEXT',
+    'TRACKING',
+    'UTM campaign: reel_handover_14_checkpoints',
+    'PUBLISH',
+    '1. shot one',
+  ]) {
     assert.ok(text.includes(needle), `missing ${needle}`);
   }
 });
 
 test('template body params are built from the configured fields', () => {
-  const pack = { dateLabel: 'Tue 3 Nov 2026', pillar: 'trust', hook: 'Nine clauses' };
+  const pack = { dateLabel: 'Tue 3 Nov 2026', pillar: 'trust', hook: 'Nine clauses', concept: 'A text card' };
   assert.deepEqual(buildTemplateParams(pack, ['dateLabel']), ['Tue 3 Nov 2026']);
   assert.deepEqual(buildTemplateParams(pack, ['dateLabel', 'pillar']), ['Tue 3 Nov 2026', 'trust']);
+  assert.deepEqual(buildTemplateParams(pack, ['concept']), ['A text card']);
   assert.throws(() => buildTemplateParams(pack, ['format']), DeliveryError);
 });
 
@@ -144,16 +188,9 @@ test('an invalid OpenAI payload is retried once and then rejected', async () => 
               content: [
                 {
                   type: 'output_text',
-                  text: JSON.stringify({
-                    pillar: 'process',
-                    format: 'Reel',
-                    hook: Array.from({ length: 30 }, (_, i) => `word${i}`).join(' '),
-                    caption: 'x'.repeat(120),
-                    cta: 'WhatsApp us',
-                    hashtags: ['#a', '#b', '#c', '#d', '#e'],
-                    shotList: ['a', 'b', 'c'],
-                    publishTimeIST: '7:30 PM IST',
-                  }),
+                  text: JSON.stringify(
+                    validPack({ hook: Array.from({ length: 30 }, (_, i) => `word${i}`).join(' ') }),
+                  ),
                 },
               ],
             },
@@ -173,4 +210,35 @@ test('an invalid OpenAI payload is retried once and then rejected', async () => 
   await assert.rejects(() => service.runner.runDaily({ trigger: 'test' }), /failed validation/);
   assert.equal(openaiCalls, 2, 'one attempt plus one repair attempt');
   assert.equal(http.calls.filter((call) => call.url.includes('graph.facebook.com')).length, 0);
+});
+
+test('the OpenAI request asks for the eight brief items with a strict schema', async () => {
+  const http = fakeHttp((url) => {
+    if (url.includes('openai.com')) {
+      return {
+        ok: true,
+        status: 200,
+        data: { output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(validPack()) }] }] },
+      };
+    }
+    return { ok: true, status: 200, data: { messages: [{ id: 'wamid.OK' }] } };
+  });
+
+  const { service } = buildService({
+    env: { CONTENT_SOURCE: 'openai', OPENAI_API_KEY: 'sk-test' },
+    http,
+    now: () => FIXED_NOW,
+  });
+  await service.content.generate({ nowMs: FIXED_NOW });
+
+  const call = http.calls.find((entry) => entry.url.includes('openai.com'));
+  const body = JSON.parse(call.options.body);
+  assert.equal(body.text.format.type, 'json_schema');
+  assert.equal(body.text.format.strict, true);
+  const required = body.text.format.schema.required;
+  for (const field of ['format', 'pillar', 'hook', 'concept', 'shotList', 'onScreenText', 'caption', 'hashtags', 'cta', 'tracking', 'publishTimeIST']) {
+    assert.ok(required.includes(field), `schema should require ${field}`);
+  }
+  assert.match(body.input, /Never invent project results/);
+  assert.match(body.input, /luxury, dream, transform, seamless, elevate/);
 });

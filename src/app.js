@@ -1,6 +1,7 @@
 import express from 'express';
 import { verifySignature, verifySubscription, processWebhookBody } from './webhook.js';
 import { renderPackPage } from './packPage.js';
+import { createRateLimiter } from './rateLimit.js';
 import { timingSafeEqualString } from './util.js';
 
 const SERVICE_NAME = 'jfi-studio-whatsapp-automation';
@@ -31,6 +32,11 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
       },
     }),
   );
+
+  // Abuse protection. Generous on the webhook because Meta can legitimately
+  // burst and retries on a non-200; tight on the authenticated admin surface.
+  const webhookLimiter = createRateLimiter({ windowMs: 60_000, max: 1200, name: 'webhook' });
+  const adminLimiter = createRateLimiter({ windowMs: 60_000, max: 60, name: 'admin' });
 
   function requireAdmin(req, res, next) {
     if (!config.adminToken) {
@@ -97,7 +103,7 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
     return res.status(200).type('text/plain').send(result.challenge);
   });
 
-  app.post('/webhook', (req, res) => {
+  app.post('/webhook', webhookLimiter, (req, res) => {
     const signature = verifySignature({
       rawBody: req.rawBody,
       header: req.get('x-hub-signature-256'),
@@ -130,6 +136,7 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
   // --- Admin ----------------------------------------------------------------
   app.post(
     '/admin/run-daily',
+    adminLimiter,
     requireAdmin,
     wrap(async (req, res) => {
       const force = req.body?.force === true;
@@ -140,6 +147,7 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
 
   app.post(
     '/admin/resend-latest',
+    adminLimiter,
     requireAdmin,
     wrap(async (_req, res) => {
       const result = await runner.resendLatest();
@@ -149,6 +157,7 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
 
   app.get(
     '/admin/diagnostics',
+    adminLimiter,
     requireAdmin,
     wrap(async (_req, res) => {
       const checks = { phoneNumber: null, businessAccount: null };

@@ -35,9 +35,12 @@ delivered — those need your accounts and credentials.
 - [x] Graceful shutdown on SIGTERM/SIGINT with a forced-exit backstop.
 - [x] Startup validation of every variable, reporting all problems at once,
       naming variables only — never values.
-- [x] Daily content pack with all eight required elements, brief enforced in
-      code (hook length, number-or-place, banned words, hashtag and shot counts,
-      IST time).
+- [x] Daily content pack with all eight required elements — format and duration,
+      pillar, first-frame hook, video/post concept, shot list with on-screen text,
+      caption with hashtags, call to action, publishing time and tracking
+      metadata. The brief is enforced in code (hook length, number-or-place,
+      banned words, hashtag/shot/on-screen counts, UTM slug, IST time), not just
+      asked for in the prompt.
 - [x] Daily schedule at 08:30 Asia/Kolkata via an external Render Cron Job,
       with an opt-in in-process timer as an alternative.
 - [x] Idempotent per calendar day: a restart, a second instance or a duplicate
@@ -49,10 +52,20 @@ delivered — those need your accounts and credentials.
       `.gitignore`, `README.md`, `src/`, `scripts/`, `tests/`, `docs/`.
 - [x] `.gitignore` excludes `.env`, `.env.*`, key material, logs and runtime data.
 - [x] `render.yaml` contains no secret values (`sync: false` for every secret).
-- [x] 79 automated tests: webhook verification, signature validation, sending,
-      invalid configuration, error handling, dedupe, run guard, 24-hour window,
-      every route.
-- [x] All 79 tests pass (`npm test`).
+- [x] `META_APP_ID`, `META_API_VERSION` and `DAILY_SCHEDULE` supported as
+      requested, with the earlier names kept as aliases and a startup warning so
+      they can be renamed.
+- [x] Rate limiting / abuse protection on the webhook and admin surfaces.
+- [x] Data retention, consent, opt-out and WhatsApp policy documented
+      ([POLICY.md](POLICY.md)).
+- [x] 100 automated tests: webhook verification, signature validation, sending,
+      invalid configuration, error handling, dedupe, run guard, timezone and
+      DST boundaries, rate limiting, 24-hour window, the eight pack items, every
+      route.
+- [x] All 100 tests pass (`npm test`).
+- [x] `npm audit` reports **0 vulnerabilities**; `node-cron` upgraded to v4
+      (no dependencies) to clear the transitive `uuid` advisory.
+- [x] Secret scan: no credential-shaped strings and no `.env` file in the tree.
 - [x] Live boot smoke test: server starts, `/health`, `/status`, webhook
       handshake, signature rejection, admin auth, and a real outbound attempt
       that failed honestly instead of reporting success.
@@ -78,6 +91,7 @@ in some cases your judgement.
 - [ ] Generate a **permanent** System User access token → `META_ACCESS_TOKEN`.
 - [ ] Copy the app secret → `META_APP_SECRET`.
 - [ ] Invent a random `META_VERIFY_TOKEN` (32+ characters).
+- [ ] Read the **App ID** → `META_APP_ID` (only `setup-meta.js` needs it).
 - [ ] Read the **Phone Number ID** (not the phone number, not the WABA ID) →
       `WHATSAPP_PHONE_NUMBER_ID`.
 - [ ] Create and get approval for the template, with a body variable and a
@@ -120,7 +134,6 @@ in some cases your judgement.
   simulated request; Meta's own verification needs your token.
 - **No WhatsApp message was sent.** The outbound path is tested against a fake
   transport and a live attempt that failed honestly.
-- **The two old ZIP archives were left in the repository root, untouched.**
-  They are now a redundant backup rather than the only copy of the source, and
-  deleting files you did not ask me to delete is not my call. Remove them
-  whenever you like.
+- **The two obsolete ZIP archives were deleted from the repository** in this
+  round, as requested. They remain in the Git history if you ever want them
+  back, and a fresh ZIP of the corrected source was delivered separately.

@@ -18,9 +18,11 @@ API **v26.0**.
 ## What it does, in one paragraph
 
 Every morning at 08:30 IST a job generates one content pack — format and
-duration, content pillar, a hook of at most 12 words containing a number or a
-Bengaluru place name, a ready-to-publish caption, a call to action, hashtags, a
-shot list, and a suggested publishing time in IST. The pack is saved, published
+duration, content pillar, a first-frame hook of at most 12 words containing a
+number or a Bengaluru place name, the video or post concept, a shot list with
+on-screen text, a ready-to-publish caption with hashtags, a call to action, a
+suggested publishing time in IST, and a tracking metric with a UTM campaign
+slug. The pack is saved, published
 at a private link, and a short approved WhatsApp template is sent to your
 recipient number with a button that opens the full pack. If generation or
 sending fails, the run fails loudly and **nothing** is sent — the service never
@@ -71,6 +73,7 @@ src/
   webhook.js               Meta handshake, signature verification, event processing
   daily.js                 the daily job: generate → save → deliver → record
   packPage.js              the private mobile pack page
+  rateLimit.js             in-memory fixed-window abuse protection
   app.js                   Express routes and middleware
   service.js               wiring
 scripts/
@@ -78,11 +81,12 @@ scripts/
   send-test.js             safe end-to-end test (supports --dry-run)
   discover-ids.js          prints your App ID, WABA ID and Phone Number ID from the API
   setup-meta.js            registers the webhook and creates the template via the Graph API
-tests/                     79 tests, node:test, no test framework dependency
+tests/                     100 tests, node:test, no test framework dependency
 docs/
   AUDIT.md                 what was wrong with the previous code and why it changed
   META-WEBHOOK-SETUP.md    exact Meta dashboard steps
   TROUBLESHOOTING.md       every error you are likely to hit
+  POLICY.md                data retention, consent, opt-out, WhatsApp policy
   CHECKLIST.md             done / tested / still needs you
 render.yaml                Render Blueprint (web service)
 .env.example               every variable, documented, no real values
@@ -186,6 +190,7 @@ cron job firing twice all result in exactly one message.
 | `META_ACCESS_TOKEN` | **yes** | Meta Business settings → System Users → Generate token (permanent). Starts with `EAA`. |
 | `META_APP_SECRET` | **yes** | Meta App Dashboard → App settings → Basic → App secret. Used to verify webhook signatures. |
 | `META_VERIFY_TOKEN` | **yes** | A long random string **you invent**. Enter the same value in the Meta webhook screen. Must differ from the tokens above. |
+| `META_APP_ID` | no | App settings → Basic. Only `scripts/setup-meta.js` needs it, to register the webhook subscription. Not the Phone Number ID, not the WABA ID. |
 | `WHATSAPP_PHONE_NUMBER_ID` | **yes** | Meta App Dashboard → WhatsApp → API Setup. Digits only. Not the phone number, not the WABA ID, not the App ID. |
 | `WHATSAPP_RECIPIENT_NUMBER` | **yes** | A number you control, international format, digits only, e.g. `919876543210`. Must differ from the business number. |
 | `PUBLIC_BASE_URL` | **yes** in `link` mode | Your service URL, e.g. `https://jfi-studio-whatsapp-automation.onrender.com`. No trailing slash. |
@@ -210,6 +215,13 @@ cron job firing twice all result in exactly one message.
 | `DAILY_CRON` | no | Default `30 8 * * *`, interpreted in `TIMEZONE`. |
 | `META_TIMEOUT_MS` / `META_MAX_RETRIES` | no | Defaults `15000` / `2`. |
 | `OPENAI_TIMEOUT_MS` | no | Default `60000`. |
+
+Aliases are accepted for the variables that have drifted between drafts, and the
+service warns at startup so you can rename them: `META_API_VERSION` and
+`WHATSAPP_GRAPH_VERSION` for `META_GRAPH_API_VERSION`, `DAILY_SCHEDULE` for
+`DAILY_CRON`, plus `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`,
+`WHATSAPP_VERIFY_TOKEN` and `WHATSAPP_RECIPIENT` for their `META_*` /
+`*_NUMBER` equivalents.
 
 Any mistake in these is caught at startup: the process prints the offending
 variable **names** (never values) with where to set them, then exits 1.
@@ -276,11 +288,12 @@ double-send.
 npm test
 ```
 
-79 tests across configuration validation, the webhook handshake, signature
+100 tests across configuration validation, the webhook handshake, signature
 verification, event deduplication, message sending and payload shape, Meta
-error mapping, retry and timeout behaviour, the daily-run guard, 24-hour window
-enforcement, and every HTTP route. They use a fake transport, so no network,
-credentials or Meta account is involved.
+error mapping, retry and timeout behaviour, the daily-run guard, timezone and
+DST-boundary handling, rate limiting, the 24-hour window, the content brief's
+eight required items, and every HTTP route. They use a fake transport, so no
+network, credentials or Meta account is involved.
 
 ---
 
@@ -319,6 +332,11 @@ credentials or Meta account is involved.
 - **The built-in static pack bank is a fixed rotation of six real packs**, used
   when no OpenAI key is configured. It is genuine content, not placeholder
   text, but it repeats every six days. Set `OPENAI_API_KEY` for daily variety.
+- **Rate limiting is per instance and in memory.** It protects against a flood
+  consuming CPU; it is not a distributed quota, and it resets on restart. The
+  real controls are the webhook HMAC and the admin bearer token.
+- **`npm audit` reports zero vulnerabilities** as of this commit, and the only
+  dependency with a transitive tree (`node-cron`) is now v4, which has none.
 
 ---
 
