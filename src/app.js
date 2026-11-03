@@ -1,6 +1,6 @@
 import express from 'express';
 import { verifySignature, verifySubscription, processWebhookBody } from './webhook.js';
-import { renderPackPage } from './packPage.js';
+import { renderPackPage, renderPackMissing } from './packPage.js';
 import { createRateLimiter } from './rateLimit.js';
 import { timingSafeEqualString } from './util.js';
 
@@ -188,7 +188,10 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
   // --- Pack page (the WhatsApp template button target) ----------------------
   app.get('/p/:id', (req, res) => {
     const pack = store.getPackById(req.params.id);
-    if (!pack) return res.status(404).type('html').send('<h1>Pack not found</h1>');
+    if (!pack) {
+      res.set('Cache-Control', 'no-store');
+      return res.status(404).type('html').send(renderPackMissing());
+    }
     res.set('Cache-Control', 'no-store');
     res.set('X-Robots-Tag', 'noindex, nofollow');
     return res.type('html').send(renderPackPage(pack));

@@ -10,7 +10,14 @@ services:
   - type: web
     name: jfi-studio-whatsapp-automation
     runtime: node
-    plan: starter
+    # `free` costs nothing and needs no card. Trade-offs, all documented in
+    # README.md: the service sleeps after 15 minutes idle (about 60s to wake),
+    # the filesystem is wiped on redeploy and on spin-down, and there are no
+    # cron jobs or persistent disks on the free plan.
+    #
+    # Switch to `starter` ($7/month) if you need pack links to survive a
+    # restart or the service to stay awake.
+    plan: free
     region: singapore
     branch: main
     buildCommand: npm ci --omit=dev
@@ -18,10 +25,12 @@ services:
     healthCheckPath: /health
     autoDeploy: true
 
-    # A persistent disk keeps packs and the daily-run lock across deploys, so
-    # a restart cannot send the pack twice. Disks are not available on the
-    # free plan; without one the app still works, it just loses its local
-    # state on each deploy. Uncomment both blocks together.
+    # A persistent disk keeps packs and the daily-run lock across deploys, so a
+    # restart cannot send the pack twice and pack links keep working.
+    #
+    # NOT AVAILABLE ON THE FREE PLAN — disks require a paid instance, and adding
+    # one also disables zero-downtime deploys. Uncomment both blocks together
+    # after moving to `starter`.
     # disk:
     #   name: jfi-data
     #   mountPath: /var/data

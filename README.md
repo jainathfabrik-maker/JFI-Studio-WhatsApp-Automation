@@ -82,7 +82,10 @@ scripts/
   discover-ids.js          prints your App ID, WABA ID and Phone Number ID from the API
   setup-meta.js            registers the webhook and creates the template via the Graph API
   check-render-yaml.js     validates render.yaml before a deploy (no secrets, correct shape)
+Dockerfile                 runs the same app on any container host (Fly, Koyeb, Northflank…)
 .github/workflows/ci.yml   tests, audit, secret scan and blueprint check on every push
+.github/workflows/daily.yml    free daily scheduler (replaces a paid Render cron job)
+.github/workflows/verify-deploy.yml  post-deploy live checks, run from GitHub's network
 tests/                     100 tests, node:test, no test framework dependency
 docs/
   AUDIT.md                 what was wrong with the previous code and why it changed
@@ -159,29 +162,35 @@ last run.
 Follow [docs/META-WEBHOOK-SETUP.md](docs/META-WEBHOOK-SETUP.md). You will need
 `https://<your-service>.onrender.com/webhook` and your `META_VERIFY_TOKEN`.
 
-### 6. Schedule the daily run
+### 6. Schedule the daily run — free, via GitHub Actions
 
-Render → **New → Cron Job**, same repository:
+**Render cron jobs cost $1/month minimum and are not on the free plan.** The
+free scheduler is `.github/workflows/daily.yml`, which already exists. Enable it
+with two settings in **GitHub → Settings → Secrets and variables → Actions**:
 
-| Field | Value |
-| --- | --- |
-| Schedule | `0 3 * * *` — Render cron is **UTC**, so 03:00 UTC = 08:30 IST |
-| Build command | `npm ci --omit=dev` |
-| Start command | `node scripts/run-daily.js` |
-| Environment | `PUBLIC_BASE_URL`, `ADMIN_TRIGGER_TOKEN` (same values as the web service) |
+| Type | Name | Value |
+| --- | --- | --- |
+| Variable | `PUBLIC_BASE_URL` | `https://your-service.onrender.com` |
+| Secret | `ADMIN_TRIGGER_TOKEN` | the same value as on the web service |
 
-The script calls `POST /admin/run-daily` on the web service, retries transient
-failures, and exits non-zero so a failed run shows as failed in Render. The web
-service must be awake for it to work — a free-tier instance that has gone to
-sleep will cold-start on the request, which is fine, just slower.
+It runs at `0 3 * * *` **UTC** = 08:30 IST, calls `POST /admin/run-daily`,
+retries for up to five attempts so a cold start is not reported as a failure,
+and exits non-zero on real errors. Trigger it by hand any time from the Actions
+tab.
 
-**Prefer this over the in-process timer.** `ENABLE_INTERNAL_CRON=true` also
-works, but an in-process timer dies with the process, so a restart at 08:29
-means no pack that day.
+Scheduled workflows are free on public repositories. If you make the repository
+private, they draw on the account's included Actions minutes — a daily job of a
+few seconds each is negligible.
+
+**If you would rather pay $7/month** for an always-on instance, you can also use
+`scripts/run-daily.js` as a Render Cron Job instead, or set
+`ENABLE_INTERNAL_CRON=true` to use the in-process timer. The in-process timer is
+the weakest option: it dies with the process, so a restart at 08:29 means no
+pack that day.
 
 Duplicate protection does not depend on which scheduler you use: the run is
-idempotent per calendar day in `TIMEZONE`. A restart, a second instance, or the
-cron job firing twice all result in exactly one message.
+idempotent per calendar day in `TIMEZONE`. A restart, a second instance, a cold
+start, or the workflow firing twice all result in exactly one message.
 
 ---
 
@@ -324,16 +333,60 @@ file.
 
 ---
 
+## Hosting on a free tier
+
+The default `render.yaml` now uses `plan: free`: $0, no credit card. What you
+accept for that:
+
+| Constraint | Effect here | Mitigation built in |
+| --- | --- | --- |
+| Sleeps after 15 min idle, ~60s to wake | The first request of the day is slow | The daily workflow retries up to 5 times; health checks tolerate it |
+| No persistent disk, filesystem wiped on redeploy **and on spin-down** | Pack links stop working after the service restarts or sleeps | The pack page explains this instead of showing a bare 404. Read the pack soon after it arrives, or move to a paid instance for permanent links |
+| No cron jobs ($1/month minimum) | Cannot schedule on Render itself | `.github/workflows/daily.yml` schedules it from GitHub, free |
+| 750 instance-hours/month | Far more than a daily job needs | — |
+
+**The honest trade-off:** on a free instance the WhatsApp button works for
+roughly as long as the service stays awake — 15 minutes after the last request.
+For a pack read shortly after it arrives that is fine. If you want links that
+never expire, either move to `starter` ($7/month) with the disk block in
+`render.yaml` uncommented, or host on a free tier that does not sleep.
+
+### Free alternatives, checked October 2026
+
+Render's free plan was not the only option, and `Dockerfile` is included so the
+app runs unchanged on any container host. Terms change often — verify before
+trusting a free tier with a business workflow.
+
+| Host | Free allowance | Sleeps? | Card? | Notes |
+| --- | --- | --- | --- | --- |
+| **Render** | 512 MB / 0.1 CPU, 750 instance-hours | 15 min idle | No | What `render.yaml` targets. No disk, no cron on free. |
+| **Northflank** | 2 services, 512 MB each, 1 free database | Always on | — | Most generous documented free tier for an always-on service. |
+| **Koyeb** | 1 service, 512 MB / 0.1 CPU | Reported always-on; some sources say scales to zero | Reported yes | Sources disagree — confirm at sign-up. |
+| **SnapDeploy** | 4 containers, 100 container-hours/month | 15 min idle | No | Sleeps like Render; 100 hours caps a 24/7 service. |
+| **Hostless / Botkeep / Deplexo / Abasthan** | ~512 MB, always-on claims | Claimed no | Claimed no | Small, new providers. Treat the claims as unverified and do not put business data there first. |
+| **Oracle Cloud Always Free** | 4 ARM cores / 24 GB RAM VM | Never | Yes (verification only) | The most capable free option, but you administer the VM. |
+| **Fly.io** | No free tier for new accounts since Oct 2024 | — | Yes | Trial only. |
+| **Railway** | ~$1/month of credit | Credit runs out | Yes for paid | Not sustainable for a daily job long-term. |
+| **Vercel / Netlify / Cloudflare Workers** | Generous serverless | Scale to zero | — | **Wrong shape for this app**: no persistent process, no local disk, so the pack store and the run lock do not survive. Would need a rewrite onto external storage. |
+
+**What not to do:** do not pick a serverless platform for this app without
+changing where packs are stored. The code deliberately keeps them on local disk
+because that is correct for a single always-on service. On serverless, the
+WhatsApp button would 404 for almost every tap.
+
+---
+
 ## Known limits, stated plainly
 
 - **Accepted ≠ delivered.** The app reports what Meta confirmed and nothing
   more. Delivery, read receipts and failures arrive later by webhook.
 - **Render's free tier sleeps**, so the in-process timer is not reliable there.
-  Use a Cron Job.
-- **Without a Render disk, `DATA_DIR` is wiped on each deploy.** Dedupe memory
-  and pack history reset; sends stay correct because the guard is per-day and
-  re-derived, but a redeploy immediately after a send could allow one repeat.
-  Attach the disk (`render.yaml`, commented) to close that gap.
+  Use `.github/workflows/daily.yml` (free) rather than a paid Render cron job.
+- **On a free instance, `DATA_DIR` is wiped on each deploy *and* each
+  spin-down.** Dedupe memory and pack history reset, and pack links stop
+  resolving. Sends stay correct because the per-day guard is re-derived, but a
+  restart immediately after a send could allow one repeat. Attach the disk
+  (`render.yaml`, commented) on a paid plan to close both gaps.
 - **Marketing templates on the Cloud API sunset on 13 October 2027.** If your
   daily pack template is categorised as *marketing*, Meta expects it to move to
   the Marketing Messages API for WhatsApp by then. Service, utility and

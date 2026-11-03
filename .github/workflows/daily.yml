@@ -1,0 +1,119 @@
+name: Daily content pack
+
+# Free replacement for a Render Cron Job, which costs $1/month minimum.
+# GitHub Actions scheduled workflows are free on public repositories, and the
+# runner can reach *.onrender.com — which is what actually matters here.
+#
+# 03:00 UTC = 08:30 IST. GitHub's scheduler can drift by a few minutes under
+# load, which is fine for a daily content pack.
+#
+# Setup (once):
+#   Settings → Secrets and variables → Actions
+#     Secret:   ADMIN_TRIGGER_TOKEN   (same value as on the web service)
+#     Variable: PUBLIC_BASE_URL       (https://your-service.onrender.com)
+#
+# The run is idempotent per IST calendar day, so a duplicate trigger cannot
+# send twice. `force` is deliberately not set.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Re-send even if today already sent'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-content-pack
+  cancel-in-progress: false
+
+jobs:
+  send:
+    name: Trigger the daily run
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check configuration is present
+        env:
+          BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          TOKEN: ${{ secrets.ADMIN_TRIGGER_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE_URL:-}" ]; then
+            echo "::error::Repository variable PUBLIC_BASE_URL is not set. Settings → Secrets and variables → Actions → Variables."
+            exit 1
+          fi
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::Repository secret ADMIN_TRIGGER_TOKEN is not set. Settings → Secrets and variables → Actions → Secrets."
+            exit 1
+          fi
+          echo "Target: $BASE_URL"
+
+      - name: Trigger and wait for the result
+        env:
+          BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          TOKEN: ${{ secrets.ADMIN_TRIGGER_TOKEN }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          base="${BASE_URL%/}"
+
+          # A free Render instance is asleep until something wakes it. The first
+          # request pays a ~60s cold start, and generation plus the Meta call can
+          # take a while, so be patient rather than reporting a false failure.
+          for attempt in 1 2 3 4 5; do
+            echo "--- attempt $attempt/5 ---"
+
+            if [ "${FORCE:-false}" = "true" ]; then
+              body='{"force":true}'
+            else
+              body='{}'
+            fi
+
+            code=$(curl -s -o /tmp/run.json -w '%{http_code}' \
+              --max-time 180 \
+              -X POST "$base/admin/run-daily" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d "$body" || true)
+
+            echo "HTTP ${code:-none}"
+            cat /tmp/run.json 2>/dev/null || true
+            echo
+
+            if [ "$code" = "200" ]; then
+              node -e '
+                const fs = require("fs");
+                const body = JSON.parse(fs.readFileSync("/tmp/run.json", "utf8"));
+                const summary = [];
+                if (body.skipped) {
+                  summary.push("Skipped: " + body.reason);
+                } else {
+                  summary.push("Pack " + body.packId + " (" + body.mode + " mode)");
+                  summary.push("Meta accepted message id(s): " + (body.messageIds || []).join(", "));
+                  summary.push("Accepted is not delivered — confirm with the status webhook.");
+                }
+                const out = summary.join("\n");
+                console.log(out);
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "### Daily run\n\n" + out + "\n");
+              '
+              exit 0
+            fi
+
+            if [ "$code" = "401" ]; then
+              echo "::error::ADMIN_TRIGGER_TOKEN is wrong. It must match the web service exactly."
+              exit 1
+            fi
+
+            # 502/503/504 usually mean the instance is still cold starting.
+            if [ "$attempt" -lt 5 ]; then sleep 20; fi
+          done
+
+          echo "::error::The daily run did not return 200 after 5 attempts. Check the service logs in Render."
+          exit 1

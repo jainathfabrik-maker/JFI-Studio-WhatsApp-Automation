@@ -5,33 +5,7 @@ import { escapeHtml } from './util.js';
  * document — no external fonts, scripts or stylesheets — so it renders fast
  * on a phone over a weak connection and needs no CSP exceptions.
  */
-export function renderPackPage(pack) {
-  const section = (title, bodyHtml) => `
-      <section class="card">
-        <h2>${escapeHtml(title)}</h2>
-        ${bodyHtml}
-      </section>`;
-
-  const hashtags = pack.hashtags
-    .map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`)
-    .join('');
-
-  const shots = pack.shotList
-    .map((shot, index) => `<li><span class="num">${index + 1}</span><span>${escapeHtml(shot)}</span></li>`)
-    .join('');
-
-  const onScreen = (pack.onScreenText ?? [])
-    .map((line, index) => `<li><span class="num">${index + 1}</span><span>${escapeHtml(line)}</span></li>`)
-    .join('');
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="robots" content="noindex, nofollow" />
-<title>JFI Studio content pack — ${escapeHtml(pack.dateLabel)}</title>
-<style>
+const PAGE_CSS = `
   :root {
     --ink: #1b1a17;
     --muted: #6b675f;
@@ -79,7 +53,71 @@ export function renderPackPage(pack) {
     body { background: var(--paper); }
     .card { background: #1e1d17; }
   }
-</style>
+`;
+
+/**
+ * Shown when a pack id is unknown. On a host with an ephemeral filesystem this
+ * is what you see after a redeploy or a spin-down has cleared DATA_DIR, so it
+ * explains the situation instead of showing a bare 404.
+ */
+export function renderPackMissing() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>JFI Studio — pack not available</title>
+<style>${PAGE_CSS}</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">JFI Studio · Bengaluru</div>
+      <h1>This pack is no longer available</h1>
+      <div class="meta">The link is valid, but the pack is not on this server any more.</div>
+    </header>
+    <section class="card">
+      <h2>Why</h2>
+      <p>Content packs are stored on the service's own disk. On a free hosting plan that disk is wiped whenever the service redeploys, restarts, or sleeps after being idle — so a link older than the last restart stops working.</p>
+    </section>
+    <section class="card">
+      <h2>What to do</h2>
+      <p>Ask for today's pack again, or open the link as soon as the WhatsApp message arrives. For links that stay valid permanently, move the service to a paid instance with a persistent disk, or host it somewhere with durable storage.</p>
+    </section>
+    <footer>Private link. Do not forward.</footer>
+  </div>
+</body>
+</html>`;
+}
+
+export function renderPackPage(pack) {
+  const section = (title, bodyHtml) => `
+      <section class="card">
+        <h2>${escapeHtml(title)}</h2>
+        ${bodyHtml}
+      </section>`;
+
+  const hashtags = pack.hashtags
+    .map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`)
+    .join('');
+
+  const shots = pack.shotList
+    .map((shot, index) => `<li><span class="num">${index + 1}</span><span>${escapeHtml(shot)}</span></li>`)
+    .join('');
+
+  const onScreen = (pack.onScreenText ?? [])
+    .map((line, index) => `<li><span class="num">${index + 1}</span><span>${escapeHtml(line)}</span></li>`)
+    .join('');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>JFI Studio content pack — ${escapeHtml(pack.dateLabel)}</title>
+<style>${PAGE_CSS}</style>
 </head>
 <body>
   <div class="wrap">
