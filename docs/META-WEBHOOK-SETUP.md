@@ -77,6 +77,20 @@ rejects every webhook with 401.
 
 ## 5. Create the message template — required
 
+> **Automated alternative.** Steps 5 and 6 can both be done through the Graph API
+> instead of the dashboard:
+>
+> ```bash
+> GRAPH_TOKEN=EAA... APP_ID=<app-id> WABA_ID=<waba-id> \
+>   PUBLIC_BASE_URL=https://<your-service>.onrender.com \
+>   META_VERIFY_TOKEN=<your-token> node scripts/setup-meta.js --webhook --template
+> ```
+>
+> It is a dry run unless you add `--apply`, so the first run just prints the exact
+> requests. Add `--check` to read your current subscription and report whether
+> `messages` is subscribed. Everything below still describes what is being
+> created, and is the way to do it if you prefer the dashboard.
+
 The default delivery mode needs one approved template with **a body variable and
 a dynamic URL button**.
 

@@ -77,6 +77,7 @@ scripts/
   run-daily.js             Render Cron Job entry point
   send-test.js             safe end-to-end test (supports --dry-run)
   discover-ids.js          prints your App ID, WABA ID and Phone Number ID from the API
+  setup-meta.js            registers the webhook and creates the template via the Graph API
 tests/                     79 tests, node:test, no test framework dependency
 docs/
   AUDIT.md                 what was wrong with the previous code and why it changed
