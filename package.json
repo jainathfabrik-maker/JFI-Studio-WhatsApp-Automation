@@ -12,7 +12,8 @@
     "dev": "node --watch server.js",
     "test": "node --test tests/",
     "send-test": "node scripts/send-test.js",
-    "run-daily": "node scripts/run-daily.js"
+    "run-daily": "node scripts/run-daily.js",
+    "discover-ids": "node scripts/discover-ids.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

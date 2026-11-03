@@ -76,6 +76,7 @@ src/
 scripts/
   run-daily.js             Render Cron Job entry point
   send-test.js             safe end-to-end test (supports --dry-run)
+  discover-ids.js          prints your App ID, WABA ID and Phone Number ID from the API
 tests/                     79 tests, node:test, no test framework dependency
 docs/
   AUDIT.md                 what was wrong with the previous code and why it changed
@@ -127,6 +128,18 @@ Render will prompt for every variable marked `sync: false`. Set them in
 **Dashboard → your service → Environment**. The table below says what each one
 is and where the value comes from. Never put a value in `render.yaml`, a
 commit, an issue or a chat message.
+
+If you are unsure which number is which — the Phone Number ID, the WhatsApp
+Business Account ID and the App ID are three different values and swapping them
+is the most common failure — run:
+
+```bash
+GRAPH_TOKEN=EAA...your-token npm run discover-ids
+```
+
+It reads the token from the environment only, prints every identifier it can
+see, says which environment variable each one belongs in, and warns you if the
+token is a user token that will expire.
 
 ### 4. Confirm the service is up
 
