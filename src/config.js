@@ -290,9 +290,16 @@ export function loadConfig(env = process.env) {
       publicBaseUrl = '';
     }
   }
+  // Deliberately a warning, not an error. On a first deploy you cannot know
+  // your own URL until Render has created the service, so refusing to boot
+  // would crash-loop the service before you could read the URL. The service
+  // starts, /health answers, /status says delivery is blocked, and every send
+  // refuses with a clear reason until PUBLIC_BASE_URL is set.
   if (deliveryMode === 'link' && !publicBaseUrl) {
-    errors.push(
-      `WHATSAPP_DELIVERY_MODE is "link" but PUBLIC_BASE_URL is not set. Set it in ${LOCATION.PUBLIC_BASE_URL}, or switch to WHATSAPP_DELIVERY_MODE=text (only works inside an open 24-hour window).`,
+    warnings.push(
+      `PUBLIC_BASE_URL is not set, so link delivery is blocked: the template button has no URL to point at. ` +
+        `Copy the service URL from the top of your Render service page into ${LOCATION.PUBLIC_BASE_URL} and redeploy. ` +
+        `The service runs normally until then; /status will report deliveryBlocked.`,
     );
   }
 
@@ -334,6 +341,7 @@ export function loadConfig(env = process.env) {
     templateUrlButtonIndex,
     templateBodyFields: templateBodyFields.length ? templateBodyFields : ['dateLabel'],
     publicBaseUrl,
+    publicBaseUrlConfigured: Boolean(publicBaseUrl),
     contentSource,
     effectiveContentSource,
     openaiKey,

@@ -83,8 +83,13 @@ export function createApp({ config, logger, store, whatsapp, runner, safety = { 
         templateLanguage: config.templateLanguage,
         templateBodyFields: config.templateBodyFields,
       },
-      deliveryBlocked: safety.blocked,
-      deliveryBlockedReason: safety.blocked ? safety.reason : null,
+      deliveryBlocked: safety.blocked || (config.deliveryMode === 'link' && !config.publicBaseUrlConfigured),
+      deliveryBlockedReason: safety.blocked
+        ? safety.reason
+        : config.deliveryMode === 'link' && !config.publicBaseUrlConfigured
+          ? 'PUBLIC_BASE_URL is not set, so the pack link cannot be built. Copy your service URL from the Render service page into PUBLIC_BASE_URL and redeploy.'
+          : null,
+      publicBaseUrlConfigured: config.publicBaseUrlConfigured,
       lastRun: lastRun
         ? { date: lastRun.date, status: lastRun.status, at: lastRun.at, packId: lastRun.packId ?? null, error: lastRun.error ?? null }
         : null,

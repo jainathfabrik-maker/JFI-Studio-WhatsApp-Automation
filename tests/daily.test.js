@@ -88,6 +88,19 @@ test('a failed delivery is recorded and the day can be retried', async () => {
   assert.deepEqual(retry.messageIds, ['wamid.RETRY']);
 });
 
+test('link mode without PUBLIC_BASE_URL refuses to send, with a clear reason', async () => {
+  const http = okHttp();
+  const { service } = buildService({ env: { PUBLIC_BASE_URL: '' }, http, now: () => FIXED_NOW });
+
+  await assert.rejects(() => service.runner.runDaily({ trigger: 'test' }), (error) => {
+    assert.equal(error.code, 'public-base-url-missing');
+    assert.equal(error.status, 409);
+    assert.match(error.message, /PUBLIC_BASE_URL/);
+    return true;
+  });
+  assert.equal(http.calls.length, 0, 'nothing may be sent without a pack link');
+});
+
 test('text mode refuses to send outside the 24-hour window', async () => {
   const http = okHttp();
   const { service } = buildService({

@@ -54,7 +54,10 @@ export function createDailyRunner({
 
     if (config.deliveryMode === 'link') {
       if (!config.publicBaseUrl) {
-        throw new DeliveryError('PUBLIC_BASE_URL is not configured, so the pack link cannot be built.');
+        throw new DeliveryError(
+          'PUBLIC_BASE_URL is not set, so the pack link cannot be built. Copy your service URL from the top of the Render service page into PUBLIC_BASE_URL and redeploy.',
+          { code: 'public-base-url-missing', status: 409 },
+        );
       }
       const packUrl = `${config.publicBaseUrl}/p/${pack.id}`;
       const bodyParams = buildTemplateParams(pack, config.templateBodyFields);

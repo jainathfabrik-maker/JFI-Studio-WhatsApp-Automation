@@ -55,8 +55,15 @@ test('recipient formatting is normalised to digits', () => {
   assert.equal(config.recipientNumber, '919876543210');
 });
 
-test('link delivery mode without PUBLIC_BASE_URL is rejected', () => {
-  const { errors } = loadConfig(baseEnv({ PUBLIC_BASE_URL: '' }));
+test('link mode without PUBLIC_BASE_URL starts but warns, so a first deploy can boot', () => {
+  const { config, errors, warnings } = loadConfig(baseEnv({ PUBLIC_BASE_URL: '' }));
+  assert.deepEqual(errors, [], 'must not refuse to start before you can know your own URL');
+  assert.match(warnings.join('\n'), /PUBLIC_BASE_URL/);
+  assert.equal(config.publicBaseUrlConfigured, false);
+});
+
+test('a malformed PUBLIC_BASE_URL is still a hard error', () => {
+  const { errors } = loadConfig(baseEnv({ PUBLIC_BASE_URL: 'not-a-url' }));
   assert.match(errors.join('\n'), /PUBLIC_BASE_URL/);
 });
 
