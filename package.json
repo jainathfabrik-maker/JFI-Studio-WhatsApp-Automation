@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "node --test tests/",
+    "test": "node --test tests/*.test.js",
     "send-test": "node scripts/send-test.js",
     "run-daily": "node scripts/run-daily.js",
     "discover-ids": "node scripts/discover-ids.js",
