@@ -22,7 +22,7 @@ test('link mode sends a template whose URL button points at the stored pack', as
   assert.equal(body.template.components[0].parameters[0].text, 'Tue 3 Nov 2026');
   assert.equal(body.template.components[1].parameters[0].text, result.packId);
 
-  const pack = service.store.getPackById(result.packId);
+  const pack = await service.store.getPackById(result.packId);
   assert.equal(pack.status, 'sent');
   assert.equal(pack.date, '2026-11-03');
   assert.equal(pack.mode, 'link');
@@ -59,7 +59,7 @@ test('a concurrent run is blocked by the run lock', async () => {
   const { service } = buildService({ http, now: () => FIXED_NOW });
 
   // Simulate another process holding today's lock.
-  const lock = service.store.tryAcquireRunLock('2026-11-03', 'another-process');
+  const lock = await service.store.tryAcquireRunLock('2026-11-03', 'another-process');
   assert.equal(lock.acquired, true);
 
   const result = await service.runner.runDaily({ trigger: 'test' });
@@ -81,7 +81,7 @@ test('a failed delivery is recorded and the day can be retried', async () => {
   const { service } = buildService({ http, now: () => FIXED_NOW });
 
   await assert.rejects(() => service.runner.runDaily({ trigger: 'test' }), /132000/);
-  assert.equal(service.store.getLastRun().status, 'failed');
+  assert.equal((await service.store.getLastRun()).status, 'failed');
 
   const retry = await service.runner.runDaily({ trigger: 'test' });
   assert.equal(retry.skipped, false, 'a failed day must be retryable');
@@ -154,7 +154,7 @@ test('text mode sends the pack once a recipient has messaged in', async () => {
     now: () => FIXED_NOW,
   });
 
-  service.store.recordInbound('919876543210');
+  await service.store.recordInbound('919876543210');
   const result = await service.runner.runDaily({ trigger: 'test' });
 
   assert.equal(result.mode, 'text');
@@ -183,7 +183,7 @@ test('resendLatest re-sends the stored pack, and fails cleanly when there is non
 test('the pack page renders the whole brief', async () => {
   const { service } = buildService({ http: okHttp(), now: () => FIXED_NOW });
   const { packId } = await service.runner.runDaily({ trigger: 'test' });
-  const pack = service.store.getPackById(packId);
+  const pack = await service.store.getPackById(packId);
   const { renderPackPage } = await import('../src/packPage.js');
   const html = renderPackPage(pack);
 

@@ -79,7 +79,7 @@ test('POST /webhook accepts a correctly signed payload and records the inbound w
       body: raw,
     });
     assert.equal(response.status, 200);
-    assert.equal(service.store.isWithinServiceWindow('919876543210'), true);
+    assert.equal(await service.store.isWithinServiceWindow('919876543210'), true);
   });
 });
 

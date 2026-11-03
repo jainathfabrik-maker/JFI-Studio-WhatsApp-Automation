@@ -45,64 +45,66 @@ test('signature verification rejects a missing or malformed header', () => {
   assert.equal(verifySignature({ rawBody: raw, header: signBody(SECRET, raw), appSecret: '' }).reason, 'app-secret-missing');
 });
 
-test('an inbound message is processed once and then deduplicated', () => {
+test('an inbound message is processed once and then deduplicated', async () => {
   const dir = tempDir();
   const store = createStore({ dir, logger: silentLogger });
-  store.init();
+  await store.init();
   const payload = inboundPayload({ messageId: 'wamid.DUPE1' });
 
-  const first = processWebhookBody({ body: payload, store, logger: silentLogger });
+  const first = await processWebhookBody({ body: payload, store, logger: silentLogger });
   assert.equal(first.messages, 1);
   assert.equal(first.duplicates, 0);
 
-  const second = processWebhookBody({ body: payload, store, logger: silentLogger });
+  const second = await processWebhookBody({ body: payload, store, logger: silentLogger });
   assert.equal(second.messages, 0);
   assert.equal(second.duplicates, 1);
 });
 
-test('an inbound message opens the 24-hour service window for that sender', () => {
+test('an inbound message opens the 24-hour service window for that sender', async () => {
   const store = createStore({ dir: tempDir(), logger: silentLogger });
-  store.init();
-  assert.equal(store.isWithinServiceWindow('919876543210'), false);
-  processWebhookBody({ body: inboundPayload({ from: '919876543210' }), store, logger: silentLogger });
-  assert.equal(store.isWithinServiceWindow('919876543210'), true);
+  await store.init();
+  assert.equal(await store.isWithinServiceWindow('919876543210'), false);
+  await processWebhookBody({ body: inboundPayload({ from: '919876543210' }), store, logger: silentLogger });
+  assert.equal(await store.isWithinServiceWindow('919876543210'), true);
 });
 
-test('delivery statuses are deduplicated per status value', () => {
+test('delivery statuses are deduplicated per status value', async () => {
   const store = createStore({ dir: tempDir(), logger: silentLogger });
-  store.init();
+  await store.init();
   const delivered = statusPayload({ messageId: 'wamid.OUT1', status: 'delivered' });
 
-  const first = processWebhookBody({ body: delivered, store, logger: silentLogger });
+  const first = await processWebhookBody({ body: delivered, store, logger: silentLogger });
   assert.equal(first.statuses, 1);
 
-  const repeat = processWebhookBody({ body: delivered, store, logger: silentLogger });
+  const repeat = await processWebhookBody({ body: delivered, store, logger: silentLogger });
   assert.equal(repeat.duplicates, 1);
 
-  const read = processWebhookBody({ body: statusPayload({ messageId: 'wamid.OUT1', status: 'read' }), store, logger: silentLogger });
+  const read = await processWebhookBody({ body: statusPayload({ messageId: 'wamid.OUT1', status: 'read' }), store, logger: silentLogger });
   assert.equal(read.statuses, 1, 'a different status for the same message is a new event');
 });
 
-test('a failed status is counted and logged without throwing', () => {
+test('a failed status is counted and logged without throwing', async () => {
   const store = createStore({ dir: tempDir(), logger: silentLogger });
-  store.init();
+  await store.init();
   const body = statusPayload({ status: 'failed' });
   body.entry[0].changes[0].value.statuses[0].errors = [{ code: 131047, title: 'Re-engagement message' }];
-  const summary = processWebhookBody({ body, store, logger: silentLogger });
+  const summary = await processWebhookBody({ body, store, logger: silentLogger });
   assert.equal(summary.failures, 1);
 });
 
-test('a payload for another object type is ignored safely', () => {
+test('a payload for another object type is ignored safely', async () => {
   const store = createStore({ dir: tempDir(), logger: silentLogger });
-  store.init();
-  const summary = processWebhookBody({ body: { object: 'page', entry: [] }, store, logger: silentLogger });
+  await store.init();
+  const summary = await processWebhookBody({ body: { object: 'page', entry: [] }, store, logger: silentLogger });
   assert.equal(summary.ignored, 1);
 });
 
-test('a malformed payload does not throw', () => {
+test('a malformed payload does not throw', async () => {
   const store = createStore({ dir: tempDir(), logger: silentLogger });
-  store.init();
-  assert.doesNotThrow(() => processWebhookBody({ body: {}, store, logger: silentLogger }));
-  assert.doesNotThrow(() => processWebhookBody({ body: { entry: [{ changes: null }] }, store, logger: silentLogger }));
-  assert.doesNotThrow(() => processWebhookBody({ body: { entry: [{ changes: [{ value: { messages: [{}] } }] }] }, store, logger: silentLogger }));
+  await store.init();
+  await assert.doesNotReject(() => processWebhookBody({ body: {}, store, logger: silentLogger }));
+  await assert.doesNotReject(() => processWebhookBody({ body: { entry: [{ changes: null }] }, store, logger: silentLogger }));
+  await assert.doesNotReject(() =>
+    processWebhookBody({ body: { entry: [{ changes: [{ value: { messages: [{}] } }] }] }, store, logger: silentLogger }),
+  );
 });

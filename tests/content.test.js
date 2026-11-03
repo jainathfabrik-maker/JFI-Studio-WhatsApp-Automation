@@ -168,7 +168,7 @@ test('a failing content source fails the run without sending anything', async ()
 
   const whatsappCalls = http.calls.filter((call) => call.url.includes('graph.facebook.com'));
   assert.equal(whatsappCalls.length, 0, 'no WhatsApp message may be sent when generation fails');
-  assert.equal(service.store.getLastRun().status, 'failed');
+  assert.equal((await service.store.getLastRun()).status, 'failed');
   assert.equal(config.deliveryMode, 'link');
 });
 
