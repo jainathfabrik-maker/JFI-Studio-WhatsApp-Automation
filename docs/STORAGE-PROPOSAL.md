@@ -1,10 +1,22 @@
-# Proposal: pluggable storage
+# Pluggable storage
 
-**Status: not implemented. Awaiting your approval.**
+**Status: implemented for `file` (default) and `redis`. `vercel-blob` was
+considered and deliberately not built — see the end of this document.**
 
-This is a design proposal, not a description of the current code. Today the app
-stores everything on the local filesystem, which is correct for Render, Docker
-and any VM, and wrong for serverless.
+Select with `STORAGE_DRIVER`:
+
+| Value | Backing store | Needs | Where it makes sense |
+| --- | --- | --- | --- |
+| `file` (default) | Local disk under `DATA_DIR` | Nothing | Render, Docker, any VM. Unchanged behaviour. |
+| `redis` | Upstash Redis over HTTPS | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Serverless: Vercel, Netlify, Lambda. |
+
+An unknown value throws at startup. There is no silent fallback, because a
+fallback would look like working storage and quietly lose packs.
+
+Tests: `tests/redisStore.test.js` drives the driver against a fake Upstash REST
+endpoint that throws on any command it does not implement, and asserts the exact
+commands emitted — including that the lock is a single `SET ... NX PX 900000` and
+that de-duplication uses `EX 86400`.
 
 ---
 
@@ -33,24 +45,25 @@ recordInbound(waId)               lastInboundAt(waId)   isWithinServiceWindow(wa
 tryAcquireRunLock(dateKey, owner) releaseRunLock()      getLastRun()  recordRun(record)
 ```
 
-## Proposed shape
+## How it is built
 
-One new variable, `STORAGE_DRIVER`, defaulting to `file` so nothing changes for
-existing deployments:
+`src/store.js` is a factory over `src/stores/*.js`. The interface is uniform and
+**every method is async**, because Redis is a network call:
 
-| `STORAGE_DRIVER` | Backing store | Needs |
-| --- | --- | --- |
-| `file` (default) | Local disk under `DATA_DIR` | Nothing. Current behaviour, byte for byte. |
-| `redis` | Upstash Redis over HTTPS | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
-| `vercel-blob` | Vercel Blob | `BLOB_READ_WRITE_TOKEN` (Vercel injects it when a Blob store is attached) |
+```
+init()
+savePack(pack)   getPackById(id)   getPackByDate(dateKey)   latestPack()
+updatePack(id, patch)
+hasSeenEvent(id)   markEventSeen(id)
+recordInbound(waId)   lastInboundAt(waId)   isWithinServiceWindow(waId)
+tryAcquireRunLock(dateKey, owner)   releaseRunLock()
+getLastRun()   recordRun(record)
+```
 
-`src/store.js` keeps its current implementation and is renamed internally to
-`fileDriver`. Two new modules, `src/store/redisDriver.js` and
-`src/store/blobDriver.js`, implement the same API. `createStore` picks one from
-config and throws at startup on an unknown value — never silently falls back,
-because a silent fallback would look like working storage and lose data.
+Making reads async meant updating every caller: the webhook handler, the pack
+page route, `/status` and the daily runner. `processWebhookBody` is now async.
 
-### Why Redis is the better of the two
+### Why Redis rather than object storage
 
 All four concerns need **atomic read-modify-write** and **expiry**:
 
@@ -62,9 +75,14 @@ All four concerns need **atomic read-modify-write** and **expiry**:
 - `lastInbound` is a hash with a TTL.
 
 Vercel Blob is object storage: no atomic set-if-absent, no TTL, and every lock
-acquire becomes a read-compare-write with a race window. It would work for pack
-bodies and be genuinely worse for the lock and dedupe. If Vercel is the target,
-the honest recommendation is **Redis for state + Blob (or Redis) for packs**.
+acquire becomes a read-compare-write with a race window that could send the same
+WhatsApp message twice. A pack is about 2 KB, so Blob adds nothing Redis does not
+already do.
+
+**Decision: `vercel-blob` is not implemented.** It would add a second service, a
+second credential and a real correctness gap, for no capability Redis lacks.
+`STORAGE_DRIVER=vercel-blob` fails at startup with a message saying so and
+pointing here. If you want it anyway, say so and it is about 80 lines.
 
 ### Cost and effort
 
@@ -76,28 +94,23 @@ the honest recommendation is **Redis for state + Blob (or Redis) for packs**.
 - Risk: the lock semantics change from "file exists" to "SET NX". That needs
   explicit tests, because a broken lock means duplicate WhatsApp messages.
 
-## What would still not work on Vercel
+## What still does not work on Vercel with `redis`
 
-Even with a pluggable store, three things remain true, and I would not want them
-hidden:
+Redis fixes the correctness problems. Two honest caveats remain:
 
-1. **Cold starts.** A free-tier function takes a second or more before the
-   first line of app code runs. Meta's webhook timeout is generous, but a
-   user tapping a pack link notices.
-2. **No in-process scheduler.** The daily run still has to come from an external
-   trigger (Vercel Cron, GitHub Actions, or `POST /admin/run-daily`). That is
-   already true today.
-3. **Two moving parts instead of one.** A managed Redis is a second service to
-   keep alive, with its own free-tier limits, credentials and failure mode. On
-   Render with a disk, the filesystem is one fewer thing that can be wrong.
+1. **Cold starts.** A free-tier function takes a second or more before app code
+   runs. Meta's webhook timeout is generous, but someone tapping a pack link
+   notices.
+2. **A second service.** Managed Redis has its own free-tier limits, credentials
+   and failure mode. Upstash's free tier is 10,000 commands/day — one daily pack
+   plus a handful of webhook events is far inside that, but a Redis outage stops
+   pack links.
+3. **No in-process scheduler.** The daily run still needs an external trigger
+   (Vercel Cron or the GitHub Actions workflow). True on every host.
 
 ## Recommendation
 
-If the goal is a working deployment this week: **Render free plan**, which needs
-no `.env` file, no storage driver and no second service. The URL resolves
-automatically from `RENDER_EXTERNAL_URL`.
-
-If Vercel is a firm requirement, say so and I will implement `redis` +
-`vercel-blob` drivers behind `STORAGE_DRIVER`, with tests for the lock and
-dedupe semantics, and leave `file` as the default so Render and Docker are
-untouched.
+**Render free plan with `STORAGE_DRIVER=file`** remains the fewest moving parts:
+no `.env` file, no second service, URL resolved automatically. Choose Vercel with
+`STORAGE_DRIVER=redis` if you need the Vercel platform specifically — it works,
+it is just two services instead of one.
